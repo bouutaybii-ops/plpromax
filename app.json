@@ -22,6 +22,15 @@
       "edgeToEdgeEnabled": true,
       "permissions": []
     },
-    "ios": { "supportsTablet": false, "bundleIdentifier": "com.boutaybii.plpromax" }
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.boutaybii.plpromax"
+    },
+    "owner": "boutaybiis-team",
+    "extra": {
+      "eas": {
+        "projectId": "a8662106-6a64-4bed-a686-8e70cd2c2ca9"
+      }
+    }
   }
 }
