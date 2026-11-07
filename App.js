@@ -87,22 +87,29 @@ async function loadLeague() {
   const teams = {};
   boot.teams.forEach(t => { teams[t.id] = t.short_name; });
 
+  // L-fari9 dyal kol wa7ed f l-jawla l-7aliya (wla akhir jawla salat): bach n3erfo 3and chkoun
+  // kayn kol joueur f l-ligue (ownership, captain…).
+  const live = current && !finished.includes(current);
+  const pickGw = live ? current : finished[finished.length - 1];
+  const allPicks = pickGw ? await Promise.all(managers.map(m => getJson(`/entry/${m.id}/event/${pickGw}/picks/`).catch(() => null))) : [];
+  const leaguePicks = { gw: pickGw, by: {} };
+  managers.forEach((m, i) => { if (allPicks[i]) leaguePicks.by[m.id] = { picks: allPicks[i].picks, chip: allPicks[i].active_chip }; });
+
   // Jawla mazal kat-tl3eb: l-history dyal FPL ma kaytbeddelch live, donc kan7esbo l-points
   // dyal kol wa7ed mn l'équipe dyalo + les stats live + bonus provisoire + auto-subs.
-  if (current && !finished.includes(current)) {
+  if (live) {
     try {
       const ctx = await loadGwContext(current, players);
-      const allPicks = await Promise.all(managers.map(m => getJson(`/entry/${m.id}/event/${current}/picks/`).catch(() => null)));
       managers.forEach((m, i) => {
         const pk = allPicks[i];
         if (!pk) return;
-        const t = liveTeam({ picks: pk.picks, chip: pk.active_chip, players, ...ctx });
+        const t = liveTeam({ picks: pk.picks, chip: pk.active_chip, players, live: ctx.live, byTeam: ctx.byTeam, bonus: ctx.bonus });
         const hit = (pk.entry_history || {}).event_transfers_cost || 0;
         m.gws[current] = { p: t.total - hit, raw: t.total, h: hit, c: pk.active_chip || '', bench: t.benchPts, tr: (pk.entry_history || {}).event_transfers || 0, live: true, left: t.left, prov: t.provisional };
       });
     } catch {}
   }
-  return { leagueName: league.league.name, managers, finished, current, players, teams, fetchedAt: new Date().toISOString() };
+  return { leagueName: league.league.name, managers, finished, current, players, teams, leaguePicks, fetchedAt: new Date().toISOString() };
 }
 
 // Stats live dyal journée: points dyal kol joueur, les matchs, w l-bonus provisoire (mn l-BPS).
@@ -697,84 +704,213 @@ const STAT_AR = {
   yellow_cards: 'إنذار', red_cards: 'طرد', saves: 'تصديات', bonus: 'بونيس', defensive_contribution: 'مساهمة دفاعية',
 };
 
-// Wra9a dyal l-joueur: l-match w n-n9at dyalo f had l-jawla m-fassla, w l-ar9am dyal l-mousem.
-function PlayerSheet({ p, team, data, onClose }) {
-  if (!p) return null;
+// Wra9a dyal l-joueur: had l-jawla (match w n-n9at m-fassla), 3and chkoun kayn f l-ligue,
+// l-jawlat li fatou, w l-matchat li jayin.
+const FDR = { 1: ['#375523', '#fff'], 2: ['#01fc7a', '#1d0a20'], 3: ['#e7e7e7', '#1d0a20'], 4: ['#ff1751', '#fff'], 5: ['#80072d', '#fff'] };
+const DAYS_AR = ['الأحد', 'الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'];
+
+function leagueOwnership(c, data, element) {
+  const lp = data.leaguePicks || { by: {} };
+  const ids = Object.keys(lp.by);
+  const owners = [];
+  for (const id of ids) {
+    const pk = lp.by[id].picks.find(x => x.element === element);
+    if (pk && c.per[id]) owners.push({ id: +id, m: c.per[id].m, pick: pk, chip: lp.by[id].chip });
+  }
+  const n = ids.length || 1;
+  const starts = owners.filter(o => o.pick.multiplier > 0).length;
+  const caps = owners.filter(o => o.pick.is_captain).length;
+  const eo = owners.reduce((t, o) => t + o.pick.multiplier, 0);
+  const role = o => (o.pick.is_captain ? (o.pick.multiplier === 3 ? 'TC' : 'C') : o.pick.is_vice_captain ? 'V' : o.pick.multiplier > 0 ? 'XI' : 'بنك');
+  owners.sort((x, y) => y.pick.multiplier - x.pick.multiplier || x.m.name.localeCompare(y.m.name));
+  return { gw: lp.gw, n: ids.length, owners, owned: owners.length / n * 100, starts: starts / n * 100, caps, eo: eo / n * 100, role };
+}
+
+function PlayerSheet({ p, team, data, c, onClose }) {
+  const [tab, setTab] = useState('gw');
+  const [hist, setHist] = useState(null);
+  const [all, setAll] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    getJson(`/element-summary/${p.element}/`).then(h => alive && setHist(h)).catch(() => alive && setHist({ error: true }));
+    return () => { alive = false; };
+  }, [p.element]);
   const pl = data.players[p.element] || { n: '?' };
   const ex = (team.explain || {})[p.element] || { parts: [] };
   const fx = (team.byTeam || {})[pl.team] || [];
   const name = id => data.teams[id] || '';
-  const kickoff = f => {
-    if (!f.kickoff_time) return 'مؤجل';
-    const d = new Date(f.kickoff_time);
-    return `${['الأحد', 'الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'][d.getDay()]} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  const when = iso => {
+    if (!iso) return 'مؤجل';
+    const d = new Date(iso);
+    return `${DAYS_AR[d.getDay()]} ${d.getDate()}/${d.getMonth() + 1} · ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
   };
+  const own = leagueOwnership(c, data, p.element);
+  const pct = x => `${x.toFixed(x % 1 ? 1 : 0)}%`;
   const rows = ex.parts.flatMap(part => part.stats.map(st => ({ key: part.fixture + st.identifier, label: STAT_AR[st.identifier] || st.identifier, value: st.value, pts: st.points })));
   if (p.bonus) rows.push({ key: 'prov', label: '★ بونيس مؤقت', value: `BPS ${ex.bps}`, pts: p.bonus, prov: true });
   const mult = p.eff || 0;
-  const season = [
-    ['المجموع', pl.total], ['الفورم', pl.form], ['النقاط/ماتش', pl.ppg], ['الثمن', pl.price != null ? `£${pl.price.toFixed(1)}m` : '–'],
-    ['مختار', pl.sel != null ? `${pl.sel}%` : '–'], ['أهداف', pl.g], ['تمريرات', pl.a], ['شباك نظيفة', pl.cs], ['xG / xA', pl.xg != null ? `${pl.xg} / ${pl.xa}` : '–'],
-  ];
+
+  const tabs = [['gw', `GW${team.gw}`], ['league', 'الدوري'], ['prev', 'السابق'], ['next', 'القادم']];
+  const history = hist && hist.history ? [...hist.history].reverse() : [];
+  const shown = all ? history : history.slice(0, 5);
+  const sum = k => shown.reduce((t, h) => t + (+h[k] || 0), 0);
+  const cols = [['GW', 30], ['الخصم', 62], ['د', 30], ['ن', 28], ['G', 22], ['A', 22], ['CS', 26], ['DC', 26], ['xG', 38], ['xA', 38]];
+
   return (
     <Modal visible transparent animationType="slide" onRequestClose={onClose}>
       <TouchableOpacity activeOpacity={1} style={s.sheetShade} onPress={onClose}>
         <TouchableOpacity activeOpacity={1} style={s.sheet} onPress={() => {}}>
           <View style={s.sheetHead}>
             <View style={{ flex: 1, gap: 2 }}>
-              <Text style={s.sheetPos}>{name(pl.team)} · {POS_AR[pl.t] || ''}</Text>
+              <View style={{ flexDirection: 'row-reverse', alignItems: 'center', gap: 8 }}>
+                <Text style={s.sheetPos}>{name(pl.team)} · {POS_AR[pl.t] || ''}</Text>
+                {pl.price != null ? <View style={s.pricePill}><Text style={s.pricePillT}>{'£' + pl.price.toFixed(1) + 'm'}</Text></View> : null}
+              </View>
               <Text style={s.sheetName} numberOfLines={1}>{pl.n}</Text>
               <Text style={s.sheetFull} numberOfLines={1}>{pl.full || ''}</Text>
             </View>
             <PlayerFace pl={pl} data={data} />
             <TouchableOpacity onPress={onClose} style={s.sheetClose} accessibilityLabel="سد"><Text style={{ color: '#fff', fontSize: 18 }}>✕</Text></TouchableOpacity>
           </View>
-          <ScrollView style={{ maxHeight: 460 }} contentContainerStyle={{ padding: 14, gap: 12 }}>
+
+          <View style={s.sheetKpis}>
+            {[[p.pts, `GW${team.gw}${mult >= 2 ? ` ×${mult}` : ''}`], [pct(own.owned), 'فالدوري'], [own.caps, 'كابتن'], [pct(own.eo), 'EO'], [`${pl.sel ?? '–'}%`, 'عالمياً']].map(([v, l]) => (
+              <View key={l} style={s.sheetKpi}><Text style={s.sheetKpiN}>{v}</Text><Text style={s.sheetKpiL}>{l}</Text></View>
+            ))}
+          </View>
+
+          <View style={[s.seg, { marginHorizontal: 12, marginTop: 10 }]}>
+            {tabs.map(([k, l]) => (
+              <TouchableOpacity key={k} onPress={() => setTab(k)} style={[s.segBtn, tab === k && s.segOn]}>
+                <Text style={[s.segT, tab === k && { color: '#fff' }]}>{l}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          <ScrollView style={{ maxHeight: 430 }} contentContainerStyle={{ padding: 12, gap: 10 }}>
             {pl.news ? <View style={s.sheetNews}><Text style={s.sheetNewsT}>⚠️ {pl.news}</Text></View> : null}
 
-            <View style={s.sheetGw}>
-              <Text style={s.sheetGwL}>GW{team.gw}</Text>
-              <Text style={s.sheetGwN}>{p.pts}</Text>
-              <Text style={s.sheetGwL}>pts{mult >= 2 ? ` · ×${mult}` : ''}{p.subIn ? ' · دخل' : p.subOut ? ' · خرج' : ''}</Text>
-            </View>
-            {fx.map(f => (
-              <View key={f.id} style={s.sheetFx}>
-                <Text style={[s.sheetFxT, f.team_h === pl.team && s.sheetFxMine]}>{name(f.team_h)}</Text>
-                {f.started ? (
-                  <View style={{ flex: 1, flexDirection: 'row-reverse', justifyContent: 'center', gap: 8 }}>
-                    <Text style={s.sheetFxScore}>{f.team_h_score ?? 0}</Text>
-                    <Text style={[s.sheetFxScore, { color: C.muted }]}>-</Text>
-                    <Text style={s.sheetFxScore}>{f.team_a_score ?? 0}</Text>
+            {tab === 'gw' ? (
+              <>
+                {fx.map(f => (
+                  <View key={f.id} style={s.sheetFx}>
+                    <Text style={[s.sheetFxT, f.team_h === pl.team && s.sheetFxMine]}>{name(f.team_h)}</Text>
+                    {f.started ? (
+                      <View style={{ flex: 1, flexDirection: 'row-reverse', justifyContent: 'center', gap: 8 }}>
+                        <Text style={s.sheetFxScore}>{f.team_h_score ?? 0}</Text>
+                        <Text style={[s.sheetFxScore, { color: C.muted }]}>-</Text>
+                        <Text style={s.sheetFxScore}>{f.team_a_score ?? 0}</Text>
+                      </View>
+                    ) : <Text style={[s.sheetFxScore, { flex: 1, fontSize: 13 }]}>{when(f.kickoff_time)}</Text>}
+                    <Text style={[s.sheetFxT, f.team_a === pl.team && s.sheetFxMine]}>{name(f.team_a)}</Text>
+                    <Text style={s.sheetFxState}>{f.finished || f.finished_provisional ? 'سالا' : f.started ? `🔴 ${f.minutes}'` : ''}</Text>
                   </View>
-                ) : <Text style={[s.sheetFxScore, { flex: 1, fontSize: 13 }]}>{kickoff(f)}</Text>}
-                <Text style={[s.sheetFxT, f.team_a === pl.team && s.sheetFxMine]}>{name(f.team_a)}</Text>
-                <Text style={s.sheetFxState}>{f.finished || f.finished_provisional ? 'سالا' : f.started ? `🔴 ${f.minutes}'` : ''}</Text>
-              </View>
-            ))}
-
-            <View style={s.card}>
-              <View style={[s.tr, s.thRow]}>
-                <Text style={[s.th, { flex: 1 }]}>الإحصائية</Text>
-                <Text style={[s.th, s.colN]}>العدد</Text>
-                <Text style={[s.th, s.colN]}>نقاط</Text>
-              </View>
-              {rows.length ? rows.map(r => (
-                <View key={r.key} style={s.tr}>
-                  <Text style={[s.txt, { flex: 1 }, r.prov && { color: '#c99a00', fontWeight: '700' }]}>{r.label}</Text>
-                  <Text style={[s.num, s.colN]}>{r.value}</Text>
-                  <Text style={[s.num, s.colN, s.bold, { color: r.pts < 0 ? C.bad : C.ink }]}>{r.pts > 0 ? '+' + r.pts : r.pts}</Text>
+                ))}
+                <View style={s.card}>
+                  <View style={[s.tr, s.thRow]}>
+                    <Text style={[s.th, { flex: 1 }]}>الإحصائية</Text>
+                    <Text style={[s.th, s.colN]}>العدد</Text>
+                    <Text style={[s.th, s.colN]}>نقاط</Text>
+                  </View>
+                  {rows.length ? rows.map(r => (
+                    <View key={r.key} style={s.tr}>
+                      <Text style={[s.txt, { flex: 1 }, r.prov && { color: '#c99a00', fontWeight: '700' }]}>{r.label}</Text>
+                      <Text style={[s.num, s.colN]}>{r.value}</Text>
+                      <Text style={[s.num, s.colN, s.bold, { color: r.pts < 0 ? C.bad : C.ink }]}>{r.pts > 0 ? '+' + r.pts : r.pts}</Text>
+                    </View>
+                  )) : <Text style={[s.small, { padding: 14, textAlign: 'center' }]}>{p.done ? 'ما لعبش فهاد الجولة.' : 'مازال ما لعبش.'}</Text>}
+                  <View style={[s.tr, { backgroundColor: C.bg }]}>
+                    <Text style={[s.txt, s.bold, { flex: 1 }]}>المجموع{mult >= 2 ? ` (×${mult})` : ''}</Text>
+                    <Text style={[s.num, s.colN, s.bold]}>{ex.bps != null ? `BPS ${ex.bps}` : ''}</Text>
+                    <Text style={[s.num, s.colN, s.bold, { color: C.pitch }]}>{p.pts}</Text>
+                  </View>
                 </View>
-              )) : <Text style={[s.small, { padding: 14, textAlign: 'center' }]}>{p.done ? 'ما لعبش فهاد الجولة.' : 'مازال ما لعبش.'}</Text>}
-              {ex.bps != null && rows.length ? <Text style={[s.small, { padding: 10, textAlign: 'center' }]}>BPS {ex.bps}</Text> : null}
-            </View>
+              </>
+            ) : null}
 
-            <Text style={[s.h2, { fontSize: 15 }]}>الموسم</Text>
+            {tab === 'league' ? (
+              <>
+                <View style={s.sheetGrid}>
+                  {[[`${own.owners.length}/${own.n}`, 'عندهم'], [pct(own.starts), 'أساسي'], [own.caps, 'كابتن'], [pct(own.eo), 'الملكية الفعلية']].map(([v, l]) => (
+                    <View key={l} style={[s.sheetStat, { width: '47%' }]}><Text style={s.sheetStatN}>{v}</Text><Text style={s.sheetStatL}>{l}</Text></View>
+                  ))}
+                </View>
+                <View style={s.card}>
+                  <View style={s.cardH}><Text style={[s.h2, { fontSize: 15 }]}>عند شكون كاين</Text><Text style={s.muted}>GW{own.gw}</Text></View>
+                  {own.owners.length ? own.owners.map(o => {
+                    const r = own.role(o);
+                    return (
+                      <View key={o.id} style={s.tr}>
+                        <View style={{ flex: 1 }}>
+                          <Text style={[s.txt, s.bold]} numberOfLines={1}>{o.m.name}</Text>
+                          <Text style={s.small} numberOfLines={1}>{o.m.team}</Text>
+                        </View>
+                        <View style={[s.roleTag, r === 'بنك' && { backgroundColor: C.line }, (r === 'C' || r === 'TC') && { backgroundColor: C.pitch }]}>
+                          <Text style={[s.roleTagT, r === 'بنك' && { color: C.muted }, (r === 'C' || r === 'TC') && { color: C.neon }]}>{r}</Text>
+                        </View>
+                      </View>
+                    );
+                  }) : <Text style={[s.small, { padding: 14, textAlign: 'center' }]}>حتى واحد فالدوري ما عندو هاد اللاعب.</Text>}
+                </View>
+              </>
+            ) : null}
+
+            {tab === 'prev' ? (
+              !hist ? <ActivityIndicator style={{ padding: 30 }} color={C.pink} /> : hist.error ? <Text style={[s.small, { textAlign: 'center' }]}>ما قدرتش نجيب الإحصائيات.</Text> : (
+                <View style={s.card}>
+                  <View>
+                    <View>
+                      <View style={[s.tr, s.thRow, { gap: 0 }]}>
+                        {cols.map(([l, w]) => <Text key={l} numberOfLines={1} style={[s.th, { width: w, textAlign: 'center' }]}>{l}</Text>)}
+                      </View>
+                      {shown.map(h => (
+                        <View key={h.fixture} style={[s.tr, { gap: 0 }]}>
+                          {[h.round, `${name(h.opponent_team)} ${h.was_home ? '(د)' : '(خ)'}`, h.minutes, h.total_points, h.goals_scored, h.assists, h.clean_sheets, h.defensive_contribution ?? 0, h.expected_goals, h.expected_assists].map((v, i) => (
+                            <Text key={i} numberOfLines={1} style={[s.num, { width: cols[i][1], textAlign: 'center', fontSize: 13 }, i === 3 && s.bold]}>{v}</Text>
+                          ))}
+                        </View>
+                      ))}
+                      <View style={[s.tr, { gap: 0, backgroundColor: C.bg }]}>
+                        {['', all ? 'المجموع' : 'آخر 5', sum('minutes'), sum('total_points'), sum('goals_scored'), sum('assists'), sum('clean_sheets'), sum('defensive_contribution'), sum('expected_goals').toFixed(2), sum('expected_assists').toFixed(2)].map((v, i) => (
+                          <Text key={i} numberOfLines={1} style={[s.num, s.bold, { width: cols[i][1], textAlign: 'center', fontSize: 13 }]}>{v}</Text>
+                        ))}
+                      </View>
+                    </View>
+                  </View>
+                  {history.length > 5 ? (
+                    <TouchableOpacity onPress={() => setAll(!all)} style={{ padding: 12 }}>
+                      <Text style={[s.small, { color: C.pitch2, fontWeight: '800', textAlign: 'center' }]}>{all ? 'غير آخر 5' : `عرض كاع الجولات (${history.length})`}</Text>
+                    </TouchableOpacity>
+                  ) : null}
+                </View>
+              )
+            ) : null}
+
+            {tab === 'next' ? (
+              !hist ? <ActivityIndicator style={{ padding: 30 }} color={C.pink} /> : hist.error ? <Text style={[s.small, { textAlign: 'center' }]}>ما قدرتش نجيب الماتشات.</Text> : (
+                <View style={{ gap: 8 }}>
+                  {(hist.fixtures || []).slice(0, 6).map(f => {
+                    const [bg, fg] = FDR[f.difficulty] || FDR[3];
+                    const opp = f.is_home ? f.team_a : f.team_h;
+                    return (
+                      <View key={f.id} style={s.nextRow}>
+                        <Text style={s.nextGw}>GW{f.event ?? '–'}</Text>
+                        <View style={{ flex: 1 }}>
+                          <Text style={[s.txt, s.bold]}>{name(opp)} <Text style={s.muted}>{f.is_home ? '(دار)' : '(خارج)'}</Text></Text>
+                          <Text style={s.small}>{when(f.kickoff_time)}</Text>
+                        </View>
+                        <View style={[s.fdr, { backgroundColor: bg }]}><Text style={[s.fdrT, { color: fg }]}>{f.difficulty}</Text></View>
+                      </View>
+                    );
+                  })}
+                  <Text style={[s.small, { textAlign: 'center' }]}>الرقم = صعوبة الماتش (FDR) من 1 سهل حتى 5 صعيب</Text>
+                </View>
+              )
+            ) : null}
+
             <View style={s.sheetGrid}>
-              {season.map(([l, v]) => (
-                <View key={l} style={s.sheetStat}>
-                  <Text style={s.sheetStatN}>{v ?? '–'}</Text>
-                  <Text style={s.sheetStatL}>{l}</Text>
-                </View>
+              {[['المجموع', pl.total], ['الفورم', pl.form], ['ن/ماتش', pl.ppg], ['أهداف', pl.g], ['تمريرات', pl.a], ['xG / xA', pl.xg != null ? `${pl.xg} / ${pl.xa}` : '–']].map(([l, v]) => (
+                <View key={l} style={s.sheetStat}><Text style={s.sheetStatN}>{v ?? '–'}</Text><Text style={s.sheetStatL}>{l}</Text></View>
               ))}
             </View>
           </ScrollView>
@@ -784,7 +920,7 @@ function PlayerSheet({ p, team, data, onClose }) {
   );
 }
 
-function Pitch({ team, data }) {
+function Pitch({ team, data, c }) {
   const [sel, setSel] = useState(null);
   const xi = team.picks.filter(p => p.position <= 11);
   const bench = team.picks.filter(p => p.position > 11);
@@ -805,7 +941,7 @@ function Pitch({ team, data }) {
       <View style={s.benchRow}>
         {bench.map(p => <Kit key={p.element} p={p} data={data} bench={team.chip !== 'bboost'} onPress={() => setSel(p)} />)}
       </View>
-      {sel ? <PlayerSheet p={sel} team={team} data={data} onClose={() => setSel(null)} /> : null}
+      {sel ? <PlayerSheet p={sel} team={team} data={data} c={c} onClose={() => setSel(null)} /> : null}
     </View>
   );
 }
@@ -857,7 +993,7 @@ function Player({ c, data, id, isMe, onLogout, onBack, staff, onSession, onStaff
         {g.c ? <View style={{ alignItems: 'center', paddingBottom: 8 }}><Pill text={CHIPS[g.c]?.label} color={CHIPS[g.c]?.color} /></View> : null}
         {donk.has(gw) ? <Text style={[s.txt, { textAlign: 'center', color: C.donkey, paddingBottom: 8, fontWeight: '700' }]}>🐴 حمار هاد الجولة</Text> : null}
         {tErr ? <Text style={{ color: C.bad, padding: 14, textAlign: 'right' }}>{tErr}</Text> :
-          !team ? <ActivityIndicator style={{ padding: 40 }} color={C.pink} /> : <Pitch team={team} data={data} />}
+          !team ? <ActivityIndicator style={{ padding: 40 }} color={C.pink} /> : <Pitch team={team} data={data} c={c} />}
       </Card>
 
       <Card title="النقاط جولة بجولة" sub="البني = حمار · الذهبي = نجم">
@@ -1485,6 +1621,18 @@ const s = StyleSheet.create({
   sheetFxScore: { fontSize: 18, fontWeight: '900', color: C.ink, textAlign: 'center', fontVariant: ['tabular-nums'] },
   sheetFxMine: { backgroundColor: C.pitch, color: '#fff', borderRadius: 6, overflow: 'hidden', paddingHorizontal: 6, paddingVertical: 2 },
   sheetFxState: { fontSize: 11, color: C.pink, fontWeight: '700', minWidth: 34, textAlign: 'center' },
+  sheetKpis: { flexDirection: 'row-reverse', backgroundColor: C.pitch2, paddingVertical: 8 },
+  sheetKpi: { flex: 1, alignItems: 'center' },
+  sheetKpiN: { color: '#fff', fontSize: 16, fontWeight: '900', fontVariant: ['tabular-nums'] },
+  sheetKpiL: { color: '#d9c7dc', fontSize: 10 },
+  pricePill: { backgroundColor: 'rgba(255,255,255,0.14)', borderRadius: 999, paddingHorizontal: 8, paddingVertical: 1 },
+  pricePillT: { color: '#fff', fontSize: 12, fontWeight: '800', writingDirection: 'ltr' },
+  roleTag: { minWidth: 34, alignItems: 'center', backgroundColor: C.neon, borderRadius: 999, paddingHorizontal: 8, paddingVertical: 2 },
+  roleTagT: { color: C.pitch, fontSize: 12, fontWeight: '900' },
+  nextRow: { flexDirection: 'row-reverse', alignItems: 'center', gap: 12, backgroundColor: C.card, borderRadius: 12, padding: 10, borderWidth: 1, borderColor: C.line },
+  nextGw: { width: 50, textAlign: 'center', fontWeight: '900', color: C.pitch, fontSize: 13 },
+  fdr: { width: 34, height: 34, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
+  fdrT: { fontSize: 15, fontWeight: '900' },
   sheetGrid: { flexDirection: 'row-reverse', flexWrap: 'wrap', gap: 8 },
   sheetStat: { width: '31%', flexGrow: 1, backgroundColor: C.card, borderRadius: 12, paddingVertical: 10, alignItems: 'center', borderWidth: 1, borderColor: C.line },
   sheetStatN: { fontSize: 18, fontWeight: '900', color: C.pitch, fontVariant: ['tabular-nums'] },
