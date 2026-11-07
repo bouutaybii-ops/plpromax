@@ -3,7 +3,7 @@ import { ScrollViewStyleReset } from 'expo-router/html';
 // La page HTML dyal l-web app: icône w plein écran mli kat-zad l l'écran d'accueil (iPhone w Android).
 export default function Root({ children }) {
   return (
-    <html lang="ar" dir="rtl">
+    <html lang="ar">
       <head>
         <meta charSet="utf-8" />
         <meta httpEquiv="X-UA-Compatible" content="IE=edge" />

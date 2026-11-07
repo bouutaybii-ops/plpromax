@@ -194,6 +194,8 @@ function compute(data) {
 }
 
 const fmt = n => String(Math.round(n || 0)).replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+// Ra9m kbir (ترتيب الجولة f l3alam): 1.43M, 245k.
+const fmtShort = n => (n >= 1e6 ? (n / 1e6).toFixed(2).replace(/\.?0+$/, '') + 'M' : n >= 1e4 ? Math.round(n / 1e3) + 'k' : fmt(n));
 
 /* ---------------- UI bits ---------------- */
 function Card({ title, sub, children }) {
@@ -643,7 +645,7 @@ function Player({ c, data, id, isMe, onLogout, onBack, staff, onSession, onStaff
         <View style={s.gwSum}>
           <View style={s.gwSumBox}><Text style={s.gwSumN}>{g.p ?? '–'}</Text><Text style={s.small}>النقاط</Text></View>
           <View style={s.gwSumBox}><Text style={s.gwSumN}>{g.h ? '−' + g.h : 0}</Text><Text style={s.small}>تبديلات</Text></View>
-          <View style={s.gwSumBox}><Text style={s.gwSumN}>{team && team.hist.rank ? fmt(team.hist.rank) : '–'}</Text><Text style={s.small}>ترتيب الجولة</Text></View>
+          <View style={s.gwSumBox}><Text style={s.gwSumN} numberOfLines={1}>{team && team.hist.rank ? fmtShort(team.hist.rank) : '–'}</Text><Text style={s.small}>ترتيب الجولة</Text></View>
         </View>
         {g.live ? (
           <Text style={[s.small, { textAlign: 'center', paddingBottom: 8, color: C.pink }]}>
@@ -1048,6 +1050,7 @@ export default function App() {
   const [error, setError] = useState(null);
   const [tab, setTab] = useState('table');
   const [viewId, setViewId] = useState(null);
+  const [menu, setMenu] = useState(false);
   const [sess, setSessState] = useState(null);
   const setSess = x => { setSessState(x); if (x) AsyncStorage.setItem('fb:sess', JSON.stringify(x)).catch(() => {}); else AsyncStorage.removeItem('fb:sess').catch(() => {}); };
 
@@ -1096,8 +1099,10 @@ export default function App() {
   const c = useMemo(() => compute(data), [data]);
   const isAdmin = !!sess && sess.uid === CONFIG.staff.admin;
   const isStaff = isAdmin || (!!sess && sess.uid === CONFIG.staff.treasurer);
-  const tabs = [['table', 'الترتيب'], ['hmar', 'الحمار'], ['stats', 'إحصائيات'], ['me', 'فرقتي'], ['fund', 'الصندوق'], ['pay', isStaff ? 'الخلاص' : 'حسابي'], ['rules', 'القانون']];
-  if (isAdmin) tabs.push(['admin', 'الإدارة']);
+  const tabs = [['table', 'الترتيب', '🏆'], ['hmar', 'الحمار', '🐴'], ['stats', 'إحصائيات', '📊'], ['me', 'فرقتي', '⚽'], ['fund', 'الصندوق', '💰'], ['pay', isStaff ? 'الخلاص' : 'حسابي', '💳'], ['rules', 'القانون', '📜']];
+  if (isAdmin) tabs.push(['admin', 'الإدارة', '⚙️']);
+  const me = c && meId ? c.per[meId] : null;
+  const pageTitle = viewId ? 'فريق لاعب' : (tabs.find(x => x[0] === tab) || [])[1] || '';
 
   if (!ready) return <View style={{ flex: 1, backgroundColor: C.pitch }} />;
   const locked = meId && CONFIG.protectedIds[meId] && (!sess || sess.uid !== CONFIG.protectedIds[meId]);
@@ -1112,29 +1117,50 @@ export default function App() {
         <>
           <View style={s.header}>
             <View style={s.topBar}>
+              <TouchableOpacity onPress={() => setMenu(true)} style={s.menuBtn} accessibilityLabel="القائمة">
+                <Text style={s.menuIcon}>☰</Text>
+              </TouchableOpacity>
               <TouchableOpacity onPress={() => { setTab('me'); setViewId(null); }} style={{ flex: 1 }}>
-                <Text style={s.eyebrow} numberOfLines={1}>{c.per[meId] ? `${c.per[meId].m.team} · #${c.per[meId].rank}` : ''}</Text>
-              </TouchableOpacity>
-              <TouchableOpacity onPress={logout} style={s.logout} accessibilityLabel="تسجيل الخروج">
-                <Text style={s.logoutT}>خروج ⎋</Text>
+                <Text style={s.meName} numberOfLines={1}>{me ? me.m.name : ''}</Text>
+                <Text style={s.eyebrow} numberOfLines={1}>{me ? me.m.team : ''} · {pageTitle}</Text>
               </TouchableOpacity>
             </View>
-            <Text style={s.h1}>{data.leagueName}</Text>
-            <View style={s.kpis}>
-              <View style={s.kpi}><Text style={s.kpiN}>{c.showGw ? 'GW' + c.showGw : '–'}</Text><Text style={s.kpiL}>{c.liveGw ? 'live' : 'آخر جولة'}</Text></View>
-              <View style={s.kpi}><Text style={s.kpiN}>{fmt(c.pool)}</Text><Text style={s.kpiL}>الانخراطات</Text></View>
-              <View style={s.kpi}><Text style={s.kpiN}>{fmt(c.fund)}</Text><Text style={s.kpiL}>صندوق الحمير</Text></View>
-            </View>
+            {me ? (
+              <View style={s.kpis}>
+                <View style={s.kpi}><Text style={s.kpiN}>#{me.rank}</Text><Text style={s.kpiL}>الترتيب</Text></View>
+                <View style={s.kpi}>
+                  <Text style={s.kpiN}>{me.last ?? '–'}</Text>
+                  <Text style={s.kpiL}>{c.liveGw ? '🔴 ' : ''}{c.showGw ? 'GW' + c.showGw : 'الجولة'}</Text>
+                </View>
+                <View style={s.kpi}><Text style={s.kpiN}>{me.total}</Text><Text style={s.kpiL}>المجموع</Text></View>
+                <View style={s.kpi}><Text style={s.kpiN}>🐴{me.donkeys.length}</Text><Text style={s.kpiL}>حمار</Text></View>
+              </View>
+            ) : null}
           </View>
-          <View style={s.tabs}>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ flexDirection: 'row-reverse', gap: 4, paddingHorizontal: 12 }}>
-              {tabs.map(([k, l]) => (
-                <TouchableOpacity key={k} onPress={() => { setTab(k); setViewId(null); }} style={[s.tab, tab === k && !viewId && s.tabOn]}>
-                  <Text style={[s.tabT, tab === k && !viewId && { color: C.pitch }]}>{l}</Text>
+          <Modal visible={menu} transparent animationType="fade" onRequestClose={() => setMenu(false)}>
+            <TouchableOpacity activeOpacity={1} style={s.drawerShade} onPress={() => setMenu(false)}>
+              <TouchableOpacity activeOpacity={1} style={s.drawer} onPress={() => {}}>
+                <Text style={s.drawerTitle}>{data.leagueName}</Text>
+                <Text style={[s.small, { color: '#d9c7dc', textAlign: 'right', marginBottom: 12 }]}>
+                  {c.showGw ? `GW${c.showGw}${c.liveGw ? ' · live' : ''} · ` : ''}{fmt(c.pool)} DH انخراطات · {fmt(c.fund)} DH صندوق
+                </Text>
+                {tabs.map(([k, l, icon]) => {
+                  const on = tab === k && !viewId;
+                  return (
+                    <TouchableOpacity key={k} onPress={() => { setTab(k); setViewId(null); setMenu(false); }} style={[s.drawerItem, on && s.drawerItemOn]}>
+                      <Text style={s.drawerIcon}>{icon}</Text>
+                      <Text style={[s.drawerT, on && { color: C.pitch }]}>{l}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+                <View style={{ flex: 1 }} />
+                <TouchableOpacity onPress={() => { setMenu(false); logout(); }} style={s.drawerItem} accessibilityLabel="تسجيل الخروج">
+                  <Text style={s.drawerIcon}>⎋</Text>
+                  <Text style={s.drawerT}>تسجيل الخروج</Text>
                 </TouchableOpacity>
-              ))}
-            </ScrollView>
-          </View>
+              </TouchableOpacity>
+            </TouchableOpacity>
+          </Modal>
           <ScrollView
             style={{ flex: 1, backgroundColor: C.bg }}
             contentContainerStyle={{ padding: 14, gap: 14, paddingBottom: 40 }}
@@ -1159,20 +1185,24 @@ export default function App() {
 }
 
 const s = StyleSheet.create({
-  header: { backgroundColor: C.pitch, paddingHorizontal: 16, paddingTop: 10, paddingBottom: 16, borderBottomWidth: 3, borderColor: C.pink },
-  topBar: { flexDirection: 'row-reverse', alignItems: 'center', gap: 10 },
-  eyebrow: { color: C.cyan, fontSize: 13, fontWeight: '600', textAlign: 'right' },
-  logout: { borderWidth: 1, borderColor: 'rgba(255,255,255,0.35)', borderRadius: 999, paddingHorizontal: 12, paddingVertical: 5 },
-  logoutT: { color: '#fff', fontSize: 12, fontWeight: '700' },
   h1: { color: '#fff', fontSize: 28, fontWeight: '900', textAlign: 'right', marginVertical: 8, letterSpacing: -0.5 },
-  kpis: { flexDirection: 'row-reverse', gap: 8 },
-  kpi: { flex: 1, backgroundColor: 'rgba(255,255,255,0.08)', borderRadius: 10, padding: 10, borderTopWidth: 3, borderColor: C.neon },
-  kpiN: { color: '#fff', fontSize: 18, fontWeight: '800', fontVariant: ['tabular-nums'], textAlign: 'right' },
-  kpiL: { color: '#d9c7dc', fontSize: 11, textAlign: 'right' },
-  tabs: { backgroundColor: C.pitch2, paddingVertical: 8 },
-  tab: { paddingVertical: 7, paddingHorizontal: 14, borderRadius: 999 },
-  tabOn: { backgroundColor: C.neon },
-  tabT: { color: '#e8dcea', fontWeight: '700', fontSize: 14 },
+  header: { backgroundColor: C.pitch, paddingHorizontal: 14, paddingTop: 8, paddingBottom: 12, borderBottomWidth: 3, borderColor: C.pink, gap: 10 },
+  topBar: { flexDirection: 'row-reverse', alignItems: 'center', gap: 12 },
+  menuBtn: { width: 42, height: 42, borderRadius: 21, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.1)' },
+  menuIcon: { color: '#fff', fontSize: 22, fontWeight: '700' },
+  meName: { color: '#fff', fontSize: 19, fontWeight: '900', textAlign: 'right' },
+  eyebrow: { color: C.cyan, fontSize: 12, fontWeight: '600', textAlign: 'right' },
+  kpis: { flexDirection: 'row-reverse', gap: 6 },
+  kpi: { flex: 1, backgroundColor: 'rgba(255,255,255,0.08)', borderRadius: 10, paddingVertical: 6, paddingHorizontal: 8, borderTopWidth: 2, borderColor: C.neon },
+  kpiN: { color: '#fff', fontSize: 16, fontWeight: '800', fontVariant: ['tabular-nums'], textAlign: 'right' },
+  kpiL: { color: '#d9c7dc', fontSize: 10, textAlign: 'right' },
+  drawerShade: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', alignItems: 'flex-end' },
+  drawer: { width: '78%', maxWidth: 320, height: '100%', backgroundColor: C.pitch, paddingTop: 48, paddingHorizontal: 14, paddingBottom: 28, gap: 4 },
+  drawerTitle: { color: '#fff', fontSize: 22, fontWeight: '900', textAlign: 'right' },
+  drawerItem: { flexDirection: 'row-reverse', alignItems: 'center', gap: 12, paddingVertical: 12, paddingHorizontal: 12, borderRadius: 12 },
+  drawerItemOn: { backgroundColor: C.neon },
+  drawerIcon: { fontSize: 18, width: 26, textAlign: 'center', color: '#fff' },
+  drawerT: { color: '#fff', fontSize: 16, fontWeight: '700', textAlign: 'right' },
   card: { backgroundColor: C.card, borderRadius: 12, overflow: 'hidden', shadowColor: '#37003c', shadowOpacity: 0.08, shadowRadius: 8, shadowOffset: { width: 0, height: 2 }, elevation: 2 },
   cardH: { flexDirection: 'row-reverse', justifyContent: 'space-between', alignItems: 'baseline', padding: 12, borderBottomWidth: 1, borderColor: C.line },
   h2: { fontSize: 18, fontWeight: '800', color: C.pitch, textAlign: 'right' },
