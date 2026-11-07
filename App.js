@@ -2,7 +2,7 @@
 // Expo / React Native, fichier unique. Kolchi kayji mn l'API officielle dyal FPL.
 import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import {
-  View, Text, ScrollView, TouchableOpacity, TextInput, RefreshControl,
+  View, Text, ScrollView, TouchableOpacity, TextInput, RefreshControl, Image,
   ActivityIndicator, StyleSheet, StatusBar, Platform, Modal,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -77,7 +77,7 @@ async function loadLeague() {
     return { id: e.entry, name: e.player_name, team: e.entry_name, gws, chips: (h.chips || []).map(ch => ({ name: ch.name, gw: ch.event })) };
   });
   const players = {};
-  boot.elements.forEach(el => { players[el.id] = { n: el.web_name, t: el.element_type, team: el.team }; });
+  boot.elements.forEach(el => { players[el.id] = { n: el.web_name, t: el.element_type, team: el.team, c: el.code }; });
   const teams = {};
   boot.teams.forEach(t => { teams[t.id] = t.short_name; });
 
@@ -530,6 +530,37 @@ function GwNav({ list, gw, setGw }) {
   );
 }
 
+// Tsawer dyal les joueurs 3and Premier League. L-chemin tbeddel bin les saisons, donc kanjarrbo
+// wa7ed mn b3d wa7ed. Ila ma khdam ta wa7ed, kayban l-maillot b7al 9bel.
+const photoUrls = code => [
+  `https://resources.premierleague.com/premierleague25/photos/players/110x140/${code}.png`,
+  `https://resources.premierleague.com/premierleague/photos/players/110x140/p${code}.png`,
+  `https://resources.premierleague.com/premierleague/photos/players/250x250/p${code}.png`,
+];
+
+function PlayerFace({ pl, data, badge }) {
+  const [i, setI] = useState(0);
+  const urls = pl.c ? photoUrls(pl.c) : [];
+  const shirt = (
+    <View style={[s.shirt, pl.t === 1 && { backgroundColor: '#f2c400' }]}>
+      <Text style={[s.shirtT, pl.t === 1 && { color: C.ink }]}>{data.teams[pl.team] || ''}</Text>
+    </View>
+  );
+  return (
+    <View style={s.face}>
+      {i < urls.length ? (
+        <>
+          <Image source={{ uri: urls[i] }} style={s.photo} resizeMode="contain" onError={() => setI(i + 1)} accessibilityLabel={pl.n} />
+          <View style={[s.teamTag, pl.t === 1 && { backgroundColor: '#f2c400' }]}>
+            <Text style={[s.teamTagT, pl.t === 1 && { color: C.ink }]}>{data.teams[pl.team] || ''}</Text>
+          </View>
+        </>
+      ) : shirt}
+      {badge ? <View style={s.capt}><Text style={s.captT}>{badge}</Text></View> : null}
+    </View>
+  );
+}
+
 function Kit({ p, data, bench }) {
   const pl = data.players[p.element] || { n: '?' };
   // Banc (bla Bench Boost): kayban l-point dyal joueur wakha ma kaythesbch.
@@ -541,10 +572,7 @@ function Kit({ p, data, bench }) {
   return (
     <View style={[s.kit, p.subOut && { opacity: 0.45 }]}>
       {p.subIn ? <Text style={s.subTag}>↑ دخل</Text> : p.subOut ? <Text style={[s.subTag, { backgroundColor: C.bad }]}>↓ خرج</Text> : null}
-      <View style={[s.shirt, pl.t === 1 && { backgroundColor: '#f2c400' }]}>
-        <Text style={[s.shirtT, pl.t === 1 && { color: C.ink }]}>{data.teams[pl.team] || ''}</Text>
-        {badge ? <View style={s.capt}><Text style={s.captT}>{badge}</Text></View> : null}
-      </View>
+      <PlayerFace key={p.element} pl={pl} data={data} badge={badge} />
       <View style={s.kitName}><Text style={s.kitNameT} numberOfLines={1}>{pl.n}</Text></View>
       <View style={s.kitPts}>
         <Text style={s.kitPtsT}>{waiting ? '⏳' : pts}</Text>
@@ -1206,6 +1234,10 @@ const s = StyleSheet.create({
   kit: { width: 66, alignItems: 'center' },
   shirt: { width: 38, height: 34, borderRadius: 7, borderTopLeftRadius: 14, borderTopRightRadius: 14, backgroundColor: C.pitch, alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: '#fff' },
   shirtT: { color: '#fff', fontSize: 9, fontWeight: '800' },
+  face: { width: 50, height: 56, alignItems: 'center', justifyContent: 'flex-end' },
+  photo: { width: 46, height: 56 },
+  teamTag: { position: 'absolute', bottom: 0, left: -4, backgroundColor: C.pitch, borderRadius: 4, paddingHorizontal: 3, borderWidth: 1, borderColor: '#fff' },
+  teamTagT: { color: '#fff', fontSize: 8, fontWeight: '800' },
   capt: { position: 'absolute', top: -7, right: -9, minWidth: 18, height: 18, borderRadius: 9, backgroundColor: '#111', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 3 },
   captT: { color: '#fff', fontSize: 10, fontWeight: '900' },
   kitName: { marginTop: 3, backgroundColor: '#fff', borderTopLeftRadius: 4, borderTopRightRadius: 4, paddingHorizontal: 3, width: 66 },
