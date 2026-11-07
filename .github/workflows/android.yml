@@ -1,0 +1,88 @@
+name: Android APK
+
+on:
+  push:
+    branches: [main, 'claude/**']
+    paths-ignore: ['**.md']
+  workflow_dispatch:
+
+permissions:
+  # To publish the APK on the Releases page.
+  contents: write
+
+concurrency:
+  group: android-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: false
+
+      # Most of the build time is C++ (React Native); ccache keeps compiled objects between runs.
+      - uses: hendrikmuhs/ccache-action@v1.2
+        with:
+          key: plpromax-arm64
+          max-size: 2G
+
+      - run: npm ci
+
+      - name: Generate the Android project
+        run: npx expo prebuild --platform android --no-install
+
+      # Release build signed with the project's debug key: fine to install directly on a phone,
+      # and every build uses the same key, so a new APK installs over the old one.
+      - name: Build the APK
+        working-directory: android
+        env:
+          CMAKE_C_COMPILER_LAUNCHER: ccache
+          CMAKE_CXX_COMPILER_LAUNCHER: ccache
+          CCACHE_SLOPPINESS: include_file_mtime,include_file_ctime,time_macros,pch_defines
+          CCACHE_BASEDIR: ${{ github.workspace }}
+        # Only arm64-v8a (every recent Android phone): about 4x faster than all four CPU types.
+        run: |
+          ./gradlew assembleRelease --no-daemon --build-cache -PreactNativeArchitectures=arm64-v8a -Dorg.gradle.jvmargs="-Xmx4g -XX:MaxMetaspaceSize=1g"
+          ccache --show-stats || true
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: plpromax-apk-${{ github.run_number }}
+          path: android/app/build/outputs/apk/release/app-release.apk
+          retention-days: 14
+
+      # A release puts the APK one tap away on a phone:
+      # https://github.com/<owner>/plpromax/releases/download/plpromax-latest/PLProMax.apk
+      - name: Publish the APK on the Releases page
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cp android/app/build/outputs/apk/release/app-release.apk "$RUNNER_TEMP/PLProMax.apk"
+          gh release delete plpromax-latest --yes --cleanup-tag 2>/dev/null || true
+          gh release create plpromax-latest "$RUNNER_TEMP/PLProMax.apk" \
+            --prerelease --target "$GITHUB_SHA" \
+            --title "PL PRO MAX · build #${{ github.run_number }}" \
+            --notes "حمّل PLProMax.apk وثبّتو فالتيليفون."
+
+      - name: Summary
+        run: |
+          {
+            echo "## PL PRO MAX build #${{ github.run_number }}"
+            echo
+            echo "APK: https://github.com/${{ github.repository }}/releases/download/plpromax-latest/PLProMax.apk"
+          } >> "$GITHUB_STEP_SUMMARY"
