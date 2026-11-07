@@ -72,3 +72,13 @@ test('provisional bonus from BPS, ties included, skipped once FPL confirmed it',
   assert.deepEqual(provisionalBonus([fx(b([40, 30, 20]), [{ element: 1, value: 3 }])]), {});
   assert.deepEqual(provisionalBonus([{ started: false, stats: [] }]), {});
 });
+
+test('the first bench player takes the place even before his own match is played (FPL bench order)', () => {
+  // MID 7 did not play. Bench order: GK15, DEF6 (match not played yet), MID11 (played), FWD14.
+  // FPL brings in DEF6, not MID11: he is first in the bench order and may still play.
+  const t = liveTeam({ picks: picks(), chip: null, players, ...ctx({ 7: 0, 6: 0 }, { 6: 'todo' }) });
+  assert.deepEqual(t.rows.filter(r => r.subIn).map(r => r.element), [6]);
+  // DEF6 has 0 points so far, MID11 stays on the bench: 10 starters × 2 + captain extra 2 = 22
+  assert.equal(t.total, 22);
+  assert.equal(t.left, 1);
+});

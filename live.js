@@ -75,7 +75,9 @@ export function liveTeam({ picks, chip, live, players, byTeam, bonus }) {
       return c;
     };
     for (const out of xi.filter(r => r.dnp).sort((a, b) => a.position - b.position)) {
-      const candidates = bench.filter(b => !b.subIn && b.played && (out.type === 1 ? b.type === 1 : b.type !== 1));
+      // Bench f t-tartib dyalo (FPL): l-badil l-awel li ma "salat lih" (l3eb, wla mazal match dyalo
+      // ma sala) huwa li kaydkhol. Ila mazal ma l3ebch, kaydkhol "f l-intidar" w ma kanfoutouhch.
+      const candidates = bench.filter(b => !b.subIn && !b.dnp && (out.type === 1 ? b.type === 1 : b.type !== 1));
       for (const b of candidates) {
         out.subOut = true;
         const c = count();
