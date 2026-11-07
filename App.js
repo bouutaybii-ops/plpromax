@@ -1084,6 +1084,23 @@ export default function App() {
     })();
   }, [refresh]);
 
+  // Web: ila tla3t nouskha jdida dyal l-site, l-page kat3awed tcharja bo7dha (mli kat-rja3 l l-app
+  // wla kol 5 d9aye9). Bla hadchi, l-onglet wla l-icône f l'écran d'accueil kayb9aw f nouskha 9dima.
+  useEffect(() => {
+    if (Platform.OS !== 'web' || typeof document === 'undefined') return;
+    const bundle = s => (s.match(/\/_expo\/static\/js\/web\/entry-[^"']+\.js/) || [])[0];
+    const mine = bundle([...document.scripts].map(x => x.src).join(' '));
+    if (!mine) return;
+    const check = () => fetch('/', { cache: 'no-store' }).then(r => r.text()).then(html => {
+      const live = bundle(html);
+      if (live && live !== mine) window.location.reload();
+    }).catch(() => {});
+    const onShow = () => { if (document.visibilityState === 'visible') check(); };
+    document.addEventListener('visibilitychange', onShow);
+    const t = setInterval(check, 5 * 60000);
+    return () => { document.removeEventListener('visibilitychange', onShow); clearInterval(t); };
+  }, []);
+
   // Wast la journée: kan3awdo njibo les points kol d9i9a.
   const liveNow = !!(data && data.current && !data.finished.includes(data.current));
   useEffect(() => {
