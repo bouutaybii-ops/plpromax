@@ -78,7 +78,12 @@ async function loadLeague() {
     return { id: e.entry, name: e.player_name, team: e.entry_name, gws, chips: (h.chips || []).map(ch => ({ name: ch.name, gw: ch.event })) };
   });
   const players = {};
-  boot.elements.forEach(el => { players[el.id] = { n: el.web_name, t: el.element_type, team: el.team, c: el.code }; });
+  boot.elements.forEach(el => { players[el.id] = {
+    n: el.web_name, t: el.element_type, team: el.team, c: el.code,
+    full: `${el.first_name} ${el.second_name}`, price: el.now_cost / 10, total: el.total_points, form: el.form,
+    ppg: el.points_per_game, sel: el.selected_by_percent, g: el.goals_scored, a: el.assists, cs: el.clean_sheets,
+    min: el.minutes, bonus: el.bonus, xg: el.expected_goals, xa: el.expected_assists, news: el.news,
+  }; });
   const teams = {};
   boot.teams.forEach(t => { teams[t.id] = t.short_name; });
 
@@ -103,13 +108,15 @@ async function loadLeague() {
 // Stats live dyal journée: points dyal kol joueur, les matchs, w l-bonus provisoire (mn l-BPS).
 async function loadGwContext(gw, players) {
   const [live, fixtures] = await Promise.all([getJson(`/event/${gw}/live/`), getJson(`/fixtures/?event=${gw}`)]);
-  return { live: liveStats(live), byTeam: fixturesByTeam(fixtures), bonus: provisionalBonus(fixtures) };
+  const explain = {};
+  for (const el of live.elements || []) explain[el.id] = { parts: el.explain || [], bps: el.stats.bps, xg: el.stats.expected_goals, xa: el.stats.expected_assists };
+  return { live: liveStats(live), byTeam: fixturesByTeam(fixtures), bonus: provisionalBonus(fixtures), explain, fixtures };
 }
 
 async function loadPicks(entryId, gw, players) {
   const [picks, ctx] = await Promise.all([getJson(`/entry/${entryId}/event/${gw}/picks/`), loadGwContext(gw, players)]);
-  const t = liveTeam({ picks: picks.picks, chip: picks.active_chip, players, ...ctx });
-  return { picks: t.rows, chip: picks.active_chip, hist: picks.entry_history || {}, total: t.total, left: t.left, prov: t.provisional };
+  const t = liveTeam({ picks: picks.picks, chip: picks.active_chip, players, live: ctx.live, byTeam: ctx.byTeam, bonus: ctx.bonus });
+  return { picks: t.rows, chip: picks.active_chip, hist: picks.entry_history || {}, total: t.total, left: t.left, prov: t.provisional, explain: ctx.explain, byTeam: ctx.byTeam, gw };
 }
 
 /* ---------------- rules ---------------- */
@@ -662,7 +669,7 @@ function PlayerFace({ pl, data, badge }) {
   );
 }
 
-function Kit({ p, data, bench }) {
+function Kit({ p, data, bench, onPress }) {
   const pl = data.players[p.element] || { n: '?' };
   // Banc (bla Bench Boost): kayban l-point dyal joueur wakha ma kaythesbch.
   const pts = bench && !p.subIn ? p.base : p.pts;
@@ -671,7 +678,7 @@ function Kit({ p, data, bench }) {
   const waiting = !p.done && !p.played;
   const prov = p.bonus && (p.eff || bench) ? p.bonus : 0;
   return (
-    <View style={[s.kit, p.subOut && { opacity: 0.45 }]}>
+    <TouchableOpacity activeOpacity={0.7} onPress={onPress} style={[s.kit, p.subOut && { opacity: 0.45 }]} accessibilityLabel={`إحصائيات ${pl.n}`}>
       {p.subIn ? <Text style={s.subTag}>↑ دخل</Text> : p.subOut ? <Text style={[s.subTag, { backgroundColor: C.bad }]}>↓ خرج</Text> : null}
       <PlayerFace key={p.element} pl={pl} data={data} badge={badge} />
       <View style={s.kitName}><Text style={s.kitNameT} numberOfLines={1}>{pl.n}</Text></View>
@@ -679,11 +686,106 @@ function Kit({ p, data, bench }) {
         <Text style={s.kitPtsT}>{waiting ? '⏳' : pts}</Text>
         {prov ? <Text style={s.bonusT}>+{prov * Math.max(1, p.eff || 1)}★</Text> : null}
       </View>
-    </View>
+    </TouchableOpacity>
+  );
+}
+
+const POS_AR = { 1: 'حارس', 2: 'مدافع', 3: 'وسط', 4: 'مهاجم', 5: 'مدرب' };
+const STAT_AR = {
+  minutes: 'الدقائق', goals_scored: 'أهداف', assists: 'تمريرات حاسمة', clean_sheets: 'شباك نظيفة',
+  goals_conceded: 'أهداف مستقبلة', own_goals: 'ضد مرماه', penalties_saved: 'جزاء متصدى', penalties_missed: 'جزاء ضايع',
+  yellow_cards: 'إنذار', red_cards: 'طرد', saves: 'تصديات', bonus: 'بونيس', defensive_contribution: 'مساهمة دفاعية',
+};
+
+// Wra9a dyal l-joueur: l-match w n-n9at dyalo f had l-jawla m-fassla, w l-ar9am dyal l-mousem.
+function PlayerSheet({ p, team, data, onClose }) {
+  if (!p) return null;
+  const pl = data.players[p.element] || { n: '?' };
+  const ex = (team.explain || {})[p.element] || { parts: [] };
+  const fx = (team.byTeam || {})[pl.team] || [];
+  const name = id => data.teams[id] || '';
+  const kickoff = f => {
+    if (!f.kickoff_time) return 'مؤجل';
+    const d = new Date(f.kickoff_time);
+    return `${['الأحد', 'الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'][d.getDay()]} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  };
+  const rows = ex.parts.flatMap(part => part.stats.map(st => ({ key: part.fixture + st.identifier, label: STAT_AR[st.identifier] || st.identifier, value: st.value, pts: st.points })));
+  if (p.bonus) rows.push({ key: 'prov', label: '★ بونيس مؤقت', value: `BPS ${ex.bps}`, pts: p.bonus, prov: true });
+  const mult = p.eff || 0;
+  const season = [
+    ['المجموع', pl.total], ['الفورم', pl.form], ['النقاط/ماتش', pl.ppg], ['الثمن', pl.price != null ? `£${pl.price.toFixed(1)}m` : '–'],
+    ['مختار', pl.sel != null ? `${pl.sel}%` : '–'], ['أهداف', pl.g], ['تمريرات', pl.a], ['شباك نظيفة', pl.cs], ['xG / xA', pl.xg != null ? `${pl.xg} / ${pl.xa}` : '–'],
+  ];
+  return (
+    <Modal visible transparent animationType="slide" onRequestClose={onClose}>
+      <TouchableOpacity activeOpacity={1} style={s.sheetShade} onPress={onClose}>
+        <TouchableOpacity activeOpacity={1} style={s.sheet} onPress={() => {}}>
+          <View style={s.sheetHead}>
+            <View style={{ flex: 1, gap: 2 }}>
+              <Text style={s.sheetPos}>{name(pl.team)} · {POS_AR[pl.t] || ''}</Text>
+              <Text style={s.sheetName} numberOfLines={1}>{pl.n}</Text>
+              <Text style={s.sheetFull} numberOfLines={1}>{pl.full || ''}</Text>
+            </View>
+            <PlayerFace pl={pl} data={data} />
+            <TouchableOpacity onPress={onClose} style={s.sheetClose} accessibilityLabel="سد"><Text style={{ color: '#fff', fontSize: 18 }}>✕</Text></TouchableOpacity>
+          </View>
+          <ScrollView style={{ maxHeight: 460 }} contentContainerStyle={{ padding: 14, gap: 12 }}>
+            {pl.news ? <View style={s.sheetNews}><Text style={s.sheetNewsT}>⚠️ {pl.news}</Text></View> : null}
+
+            <View style={s.sheetGw}>
+              <Text style={s.sheetGwL}>GW{team.gw}</Text>
+              <Text style={s.sheetGwN}>{p.pts}</Text>
+              <Text style={s.sheetGwL}>pts{mult >= 2 ? ` · ×${mult}` : ''}{p.subIn ? ' · دخل' : p.subOut ? ' · خرج' : ''}</Text>
+            </View>
+            {fx.map(f => (
+              <View key={f.id} style={s.sheetFx}>
+                <Text style={[s.sheetFxT, f.team_h === pl.team && s.sheetFxMine]}>{name(f.team_h)}</Text>
+                {f.started ? (
+                  <View style={{ flex: 1, flexDirection: 'row-reverse', justifyContent: 'center', gap: 8 }}>
+                    <Text style={s.sheetFxScore}>{f.team_h_score ?? 0}</Text>
+                    <Text style={[s.sheetFxScore, { color: C.muted }]}>-</Text>
+                    <Text style={s.sheetFxScore}>{f.team_a_score ?? 0}</Text>
+                  </View>
+                ) : <Text style={[s.sheetFxScore, { flex: 1, fontSize: 13 }]}>{kickoff(f)}</Text>}
+                <Text style={[s.sheetFxT, f.team_a === pl.team && s.sheetFxMine]}>{name(f.team_a)}</Text>
+                <Text style={s.sheetFxState}>{f.finished || f.finished_provisional ? 'سالا' : f.started ? `🔴 ${f.minutes}'` : ''}</Text>
+              </View>
+            ))}
+
+            <View style={s.card}>
+              <View style={[s.tr, s.thRow]}>
+                <Text style={[s.th, { flex: 1 }]}>الإحصائية</Text>
+                <Text style={[s.th, s.colN]}>العدد</Text>
+                <Text style={[s.th, s.colN]}>نقاط</Text>
+              </View>
+              {rows.length ? rows.map(r => (
+                <View key={r.key} style={s.tr}>
+                  <Text style={[s.txt, { flex: 1 }, r.prov && { color: '#c99a00', fontWeight: '700' }]}>{r.label}</Text>
+                  <Text style={[s.num, s.colN]}>{r.value}</Text>
+                  <Text style={[s.num, s.colN, s.bold, { color: r.pts < 0 ? C.bad : C.ink }]}>{r.pts > 0 ? '+' + r.pts : r.pts}</Text>
+                </View>
+              )) : <Text style={[s.small, { padding: 14, textAlign: 'center' }]}>{p.done ? 'ما لعبش فهاد الجولة.' : 'مازال ما لعبش.'}</Text>}
+              {ex.bps != null && rows.length ? <Text style={[s.small, { padding: 10, textAlign: 'center' }]}>BPS {ex.bps}</Text> : null}
+            </View>
+
+            <Text style={[s.h2, { fontSize: 15 }]}>الموسم</Text>
+            <View style={s.sheetGrid}>
+              {season.map(([l, v]) => (
+                <View key={l} style={s.sheetStat}>
+                  <Text style={s.sheetStatN}>{v ?? '–'}</Text>
+                  <Text style={s.sheetStatL}>{l}</Text>
+                </View>
+              ))}
+            </View>
+          </ScrollView>
+        </TouchableOpacity>
+      </TouchableOpacity>
+    </Modal>
   );
 }
 
 function Pitch({ team, data }) {
+  const [sel, setSel] = useState(null);
   const xi = team.picks.filter(p => p.position <= 11);
   const bench = team.picks.filter(p => p.position > 11);
   const line = t => xi.filter(p => (data.players[p.element] || {}).t === t);
@@ -696,13 +798,14 @@ function Pitch({ team, data }) {
         <View style={s.circle} />
         {[1, 2, 3, 4].map(t => (
           <View key={t} style={s.lineRow}>
-            {line(t).map(p => <Kit key={p.element} p={p} data={data} />)}
+            {line(t).map(p => <Kit key={p.element} p={p} data={data} onPress={() => setSel(p)} />)}
           </View>
         ))}
       </View>
       <View style={s.benchRow}>
-        {bench.map(p => <Kit key={p.element} p={p} data={data} bench={team.chip !== 'bboost'} />)}
+        {bench.map(p => <Kit key={p.element} p={p} data={data} bench={team.chip !== 'bboost'} onPress={() => setSel(p)} />)}
       </View>
+      {sel ? <PlayerSheet p={sel} team={team} data={data} onClose={() => setSel(null)} /> : null}
     </View>
   );
 }
@@ -1365,6 +1468,27 @@ const s = StyleSheet.create({
   pillT: { fontSize: 11, fontWeight: '700' },
   hmar: { flexDirection: 'row-reverse', gap: 14, alignItems: 'center', backgroundColor: C.donkeyBg, borderWidth: 1, borderColor: C.donkey, borderRadius: 12, padding: 16 },
   hmarBig: { fontSize: 44 },
+  sheetShade: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
+  sheet: { backgroundColor: C.bg, borderTopLeftRadius: 20, borderTopRightRadius: 20, overflow: 'hidden', maxHeight: '88%' },
+  sheetHead: { flexDirection: 'row-reverse', alignItems: 'flex-end', gap: 12, backgroundColor: C.pitch, paddingTop: 18, paddingHorizontal: 16, paddingBottom: 0, borderBottomWidth: 3, borderColor: C.pink },
+  sheetPos: { color: C.cyan, fontSize: 12, fontWeight: '700', textAlign: 'right' },
+  sheetName: { color: '#fff', fontSize: 24, fontWeight: '900', textAlign: 'right' },
+  sheetFull: { color: '#d9c7dc', fontSize: 12, textAlign: 'right', marginBottom: 12 },
+  sheetClose: { position: 'absolute', top: 10, left: 12, width: 32, height: 32, borderRadius: 16, backgroundColor: 'rgba(255,255,255,0.15)', alignItems: 'center', justifyContent: 'center' },
+  sheetNews: { backgroundColor: '#fff4e0', borderRadius: 10, padding: 10, borderWidth: 1, borderColor: '#ffd590' },
+  sheetNewsT: { color: '#8a5a00', fontSize: 13, textAlign: 'right' },
+  sheetGw: { flexDirection: 'row-reverse', alignItems: 'baseline', justifyContent: 'center', gap: 8, backgroundColor: C.pitch, borderRadius: 14, paddingVertical: 10 },
+  sheetGwL: { color: '#d9c7dc', fontSize: 13, fontWeight: '700' },
+  sheetGwN: { color: C.neon, fontSize: 36, fontWeight: '900', fontVariant: ['tabular-nums'] },
+  sheetFx: { flexDirection: 'row-reverse', alignItems: 'center', gap: 10, backgroundColor: C.card, borderRadius: 12, paddingVertical: 10, paddingHorizontal: 14, borderWidth: 1, borderColor: C.line },
+  sheetFxT: { fontSize: 15, fontWeight: '800', color: C.pitch, minWidth: 40, textAlign: 'center' },
+  sheetFxScore: { fontSize: 18, fontWeight: '900', color: C.ink, textAlign: 'center', fontVariant: ['tabular-nums'] },
+  sheetFxMine: { backgroundColor: C.pitch, color: '#fff', borderRadius: 6, overflow: 'hidden', paddingHorizontal: 6, paddingVertical: 2 },
+  sheetFxState: { fontSize: 11, color: C.pink, fontWeight: '700', minWidth: 34, textAlign: 'center' },
+  sheetGrid: { flexDirection: 'row-reverse', flexWrap: 'wrap', gap: 8 },
+  sheetStat: { width: '31%', flexGrow: 1, backgroundColor: C.card, borderRadius: 12, paddingVertical: 10, alignItems: 'center', borderWidth: 1, borderColor: C.line },
+  sheetStatN: { fontSize: 18, fontWeight: '900', color: C.pitch, fontVariant: ['tabular-nums'] },
+  sheetStatL: { fontSize: 11, color: C.muted },
   dgList: { padding: 10, gap: 8 },
   dgCard: { flexDirection: 'row-reverse', alignItems: 'center', gap: 12, backgroundColor: C.card, borderRadius: 12, padding: 8, paddingLeft: 10, borderWidth: 1, borderColor: C.line, shadowColor: '#37003c', shadowOpacity: 0.06, shadowRadius: 6, shadowOffset: { width: 0, height: 2 }, elevation: 1 },
   dgGw: { width: 50, height: 50, borderRadius: 10, backgroundColor: C.pitch, alignItems: 'center', justifyContent: 'center' },
