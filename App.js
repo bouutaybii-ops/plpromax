@@ -444,23 +444,15 @@ function DonkeyTimer({ nextGw }) {
     const t = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(t);
   }, [deadline, over]);
-  if (deadline === undefined) return <View style={s.timer}><ActivityIndicator color="#fff" /></View>;
+  if (deadline === undefined) return <ActivityIndicator color={C.donkey} />;
   if (deadline === null) return null;
-  if (over) return <View style={s.timer}><Text style={s.timerDone}>✅ سالات المدة ديال الحمار</Text></View>;
+  if (over) return <View style={s.timerPill}><Text style={s.timerPillT}>✓</Text></View>;
   const { d, h, m, s: sec } = splitCountdown(deadline - now);
-  const cells = [[d, 'يوم'], [h, 'ساعة'], [m, 'دقيقة'], [sec, 'ثانية']];
+  const pad = n => String(n).padStart(2, '0');
   return (
-    <View style={s.timer}>
-      <Text style={s.timerTitle}>⏱️ باقي ليه فالحمار</Text>
-      <View style={s.timerRow}>
-        {cells.map(([n, l]) => (
-          <View key={l} style={s.timerCell}>
-            <Text style={s.timerN}>{String(n).padStart(2, '0')}</Text>
-            <Text style={s.timerL}>{l}</Text>
-          </View>
-        ))}
-      </View>
-      <Text style={s.timerEnd}>كيسالي {formatMoroccoDate(deadline)} · مع نهاية GW{nextGw}</Text>
+    <View style={s.timerPill} accessibilityLabel={`باقي ${d} يوم ${h} ساعة ${m} دقيقة · كيسالي ${formatMoroccoDate(deadline)}`}>
+      <Text style={s.timerPillL}>⏱</Text>
+      <Text style={s.timerPillT}>{d ? `${d}ي ` : ''}{pad(h)}:{pad(m)}:{pad(sec)}</Text>
     </View>
   );
 }
@@ -469,36 +461,23 @@ function Hmar({ c, open, refreshControl }) {
   const name = id => c.per[id].m.name;
   const cur = c.byGw[c.byGw.length - 1];
   const pens = [...c.table].sort((a, b) => b.pen.amount - a.pen.amount || b.donkeys.length - a.donkeys.length);
-  const banners = (
-    <View style={{ gap: 10 }}>
-      {c.liveDonkey ? (
-        <View style={[s.hmar, { borderStyle: 'dashed' }]}>
-          <Text style={s.hmarBig}>⏳</Text>
-          <View style={{ flex: 1 }}>
-            <Text style={[s.small, { color: C.donkey }]}>حمار مؤقت · GW{c.liveDonkey.gw} (live)</Text>
-            <Text style={s.hmarName}>{c.liveDonkey.ids.map(name).join(' و ')}</Text>
-            <Text style={s.txt}>{c.liveDonkey.min} نقطة دابا، يقدر يتبدل حتى تسالي الجولة.</Text>
-          </View>
-        </View>
-      ) : null}
-      {cur ? (
-        <View style={s.hmar}>
-          <Text style={s.hmarBig}>🐴</Text>
-          <View style={{ flex: 1 }}>
-            <Text style={[s.small, { color: C.donkey }]}>حمار الجولة {cur.gw}</Text>
-            <Text style={s.hmarName}>{cur.ids.map(name).join(' و ')}</Text>
-            <Text style={s.txt}>{cur.min} نقطة · كيخلص وكيحط صورة الحمار فالبروفيل.</Text>
-          </View>
-        </View>
-      ) : <Card><Text style={[s.txt, { padding: 16 }]}>حتى جولة ما سالات من بداية الدوري.</Text></Card>}
-      {cur && cur.gw < 38 ? <DonkeyTimer nextGw={cur.gw + 1} /> : null}
+  const banner = cur ? (
+    <View style={s.donkeyRow}>
+      <View style={s.donkeyIcon}><Text style={{ fontSize: 22 }}>🐴</Text></View>
+      <View style={{ flex: 1 }}>
+        <Text style={s.donkeyName} numberOfLines={1}>{cur.ids.map(name).join(' و ')}</Text>
+        <Text style={s.donkeySub}>حمار GW{cur.gw} · {cur.min} pts</Text>
+      </View>
+      {cur.gw < 38 ? <DonkeyTimer nextGw={cur.gw + 1} /> : null}
     </View>
+  ) : (
+    <Card><Text style={[s.txt, { padding: 16 }]}>حتى جولة ما سالات من بداية الدوري.</Text></Card>
   );
   return (
     <Sections
       refreshControl={refreshControl}
       sections={[
-        { body: banners, bare: true },
+        { body: banner, bare: true },
         {
           title: 'العقوبات', sub: 'بالدرهم',
           head: (
@@ -1366,14 +1345,13 @@ const s = StyleSheet.create({
   pillT: { fontSize: 11, fontWeight: '700' },
   hmar: { flexDirection: 'row-reverse', gap: 14, alignItems: 'center', backgroundColor: C.donkeyBg, borderWidth: 1, borderColor: C.donkey, borderRadius: 12, padding: 16 },
   hmarBig: { fontSize: 44 },
-  timer: { backgroundColor: C.donkey, borderRadius: 12, padding: 14, gap: 10, alignItems: 'center' },
-  timerTitle: { color: '#fff', fontSize: 14, fontWeight: '800' },
-  timerRow: { flexDirection: 'row-reverse', gap: 8, alignSelf: 'stretch' },
-  timerCell: { flex: 1, backgroundColor: 'rgba(255,255,255,0.14)', borderRadius: 10, paddingVertical: 8, alignItems: 'center' },
-  timerN: { color: '#fff', fontSize: 26, fontWeight: '900', fontVariant: ['tabular-nums'] },
-  timerL: { color: '#f6ece1', fontSize: 11 },
-  timerEnd: { color: '#f6ece1', fontSize: 12, textAlign: 'center' },
-  timerDone: { color: '#fff', fontSize: 15, fontWeight: '800' },
+  donkeyRow: { flexDirection: 'row-reverse', alignItems: 'center', gap: 10, backgroundColor: C.card, borderRadius: 14, paddingVertical: 10, paddingHorizontal: 12, shadowColor: '#37003c', shadowOpacity: 0.08, shadowRadius: 8, shadowOffset: { width: 0, height: 2 }, elevation: 2 },
+  donkeyIcon: { width: 40, height: 40, borderRadius: 20, backgroundColor: C.donkeyBg, alignItems: 'center', justifyContent: 'center' },
+  donkeyName: { fontSize: 16, fontWeight: '800', color: C.ink, textAlign: 'right' },
+  donkeySub: { fontSize: 12, color: C.muted, textAlign: 'right', marginTop: 1 },
+  timerPill: { flexDirection: 'row-reverse', alignItems: 'center', gap: 4, backgroundColor: C.donkey, borderRadius: 999, paddingHorizontal: 9, paddingVertical: 5 },
+  timerPillL: { color: '#fff', fontSize: 11 },
+  timerPillT: { color: '#fff', fontSize: 13, fontWeight: '800', fontVariant: ['tabular-nums'] },
   hmarName: { fontSize: 22, fontWeight: '800', color: C.donkey, textAlign: 'right' },
   grid: { flexDirection: 'row-reverse', flexWrap: 'wrap', gap: 8, padding: 12 },
   gw: { width: '48%', borderWidth: 1, borderColor: C.line, borderRadius: 8, padding: 8 },
