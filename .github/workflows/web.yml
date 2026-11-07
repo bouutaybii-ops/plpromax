@@ -1,0 +1,41 @@
+name: Web app
+
+# Kayn9el l-web app (iPhone w ay navigateur) l EAS Hosting, m3a l-proxy dyal FPL (app/api/fpl).
+on:
+  push:
+    branches: [main, 'claude/**']
+    paths-ignore: ['**.md']
+  workflow_dispatch:
+
+concurrency:
+  group: web-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - run: npm test
+
+      - name: Export the web app
+        run: npx expo export -p web
+
+      - name: Deploy to EAS Hosting
+        run: |
+          if [ -z "$EXPO_TOKEN" ]; then
+            echo "::error::Add the EXPO_TOKEN secret (expo.dev → Account settings → Access tokens) in GitHub → Settings → Secrets and variables → Actions."
+            exit 1
+          fi
+          npx eas-cli@latest deploy --prod --non-interactive

@@ -28,7 +28,8 @@ const CONFIG = {
 };
 /* ======================================================================== */
 
-const API = 'https://fantasy.premierleague.com/api';
+// F l-web, les navigateurs ma kaykhelliwch nqraw FPL direct: kandouzo b l-proxy dyalna (app/api/fpl).
+const API = Platform.OS === 'web' ? '/api/fpl' : 'https://fantasy.premierleague.com/api';
 const CHIPS = {
   wildcard: { label: 'Wildcard', short: 'WC', color: '#6b4fd8' },
   freehit: { label: 'Free Hit', short: 'FH', color: '#1f7fbf' },
@@ -1033,7 +1034,7 @@ export default function App() {
       AsyncStorage.setItem('fpl:data', JSON.stringify(light)).catch(() => {});
     } catch (e) {
       if (silent === true) return; // l-actualisation automatique tfashlat: kanb9aw b les données l-9dima
-      setError(Platform.OS === 'web' ? 'المتصفح كيمنع الاتصال بـ FPL. حل التطبيق فـ Expo Go.' : 'ما قدرتش نجيب المعطيات. تأكد من الأنترنيت وسحب للأسفل.');
+      setError('ما قدرتش نجيب المعطيات. تأكد من الأنترنيت وسحب للأسفل.');
     } finally { setLoading(false); }
   }, []);
 

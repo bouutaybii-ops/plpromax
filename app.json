@@ -31,6 +31,19 @@
       "eas": {
         "projectId": "a8662106-6a64-4bed-a686-8e70cd2c2ca9"
       }
+    },
+    "plugins": [
+      "expo-router"
+    ],
+    "scheme": "plpromax",
+    "web": {
+      "output": "server",
+      "bundler": "metro",
+      "favicon": "./assets/favicon.png",
+      "name": "PL PRO MAX",
+      "shortName": "PL PRO MAX",
+      "themeColor": "#37003c",
+      "backgroundColor": "#37003c"
     }
   }
 }
