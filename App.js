@@ -202,28 +202,34 @@ const fmtShort = n => (n >= 1e6 ? (n / 1e6).toFixed(2).replace(/\.?0+$/, '') + '
 // Page b bzaf dyal les cartes: l-3onwan dyal kol carte (w s-ster dyal l-colonnes) kayb9a lase9
 // lfo9 mli kanscrolliw f had l-carte, 7tta tji l-carte li moraha.
 function Sections({ sections, refreshControl, footer }) {
+  const web = Platform.OS === 'web';
   const children = [];
   const sticky = [];
   sections.filter(Boolean).forEach((sec, i) => {
     const hasHead = !!(sec.title || sec.head);
-    if (hasHead) {
-      sticky.push(children.length);
-      children.push(
-        <View key={'h' + i} style={s.secHead}>
-          {sec.title ? (
-            <View style={s.cardH}>
-              <Text style={s.h2}>{sec.title}</Text>
-              {sec.sub ? <Text style={s.muted}>{sec.sub}</Text> : null}
-            </View>
-          ) : null}
-          {sec.head || null}
-        </View>
-      );
+    const head = hasHead ? (
+      <View key={'h' + i} style={[s.secHead, web && s.secHeadWeb]}>
+        {sec.title ? (
+          <View style={s.cardH}>
+            <Text style={s.h2}>{sec.title}</Text>
+            {sec.sub ? <Text style={s.muted}>{sec.sub}</Text> : null}
+          </View>
+        ) : null}
+        {sec.head || null}
+      </View>
+    ) : null;
+    const body = <View key={'b' + i} style={sec.bare ? { marginBottom: 14 } : [s.secBody, !hasHead && s.secAlone]}>{sec.body}</View>;
+    if (web) {
+      // Web: "position: sticky" kayb9a lase9 ghir west l-bloc dyalo, donc mli kaysali l-jadwal
+      // kaykhrej m3ah l-3onwan dyalo (stickyHeaderIndices ma kaydfe3ch l-9dim f l-web).
+      children.push(<View key={'s' + i}>{head}{body}</View>);
+    } else {
+      if (head) { sticky.push(children.length); children.push(head); }
+      children.push(body);
     }
-    children.push(<View key={'b' + i} style={sec.bare ? { marginBottom: 14 } : [s.secBody, !hasHead && s.secAlone]}>{sec.body}</View>);
   });
   return (
-    <ScrollView style={{ flex: 1, backgroundColor: C.bg }} contentContainerStyle={{ padding: 14, paddingBottom: 40 }} stickyHeaderIndices={sticky} refreshControl={refreshControl}>
+    <ScrollView style={{ flex: 1, backgroundColor: C.bg }} contentContainerStyle={{ padding: 14, paddingBottom: 40 }} stickyHeaderIndices={web ? undefined : sticky} refreshControl={refreshControl}>
       {children}
       {footer || null}
     </ScrollView>
@@ -502,12 +508,25 @@ function Hmar({ c, open, refreshControl }) {
         {
           title: 'الحمير جولة بجولة',
           body: (
-            <View style={s.grid}>
-              {[...c.byGw].reverse().map(b => (
-                <View key={b.gw} style={s.gw}>
-                  <Text style={s.small}>GW {b.gw} · {b.min} pts{b.tie ? ' · تعادل، حسمو المجموع' : ''}</Text>
-                  <Text style={[s.txt, s.bold]}>{b.ids.map(name).join('، ')}</Text>
-                </View>
+            <View style={s.dgList}>
+              {[...c.byGw].reverse().map((b, i) => (
+                <TouchableOpacity key={b.gw} style={s.dgCard} onPress={() => open(b.ids[0])} activeOpacity={0.8}>
+                  <View style={[s.dgGw, i === 0 && { backgroundColor: C.pink }]}>
+                    <Text style={s.dgGwL}>GW</Text>
+                    <Text style={s.dgGwN}>{b.gw}</Text>
+                  </View>
+                  <View style={{ flex: 1, gap: 2 }}>
+                    <Text style={s.dgName} numberOfLines={1}>{b.ids.map(name).join('، ')}</Text>
+                    <View style={{ flexDirection: 'row-reverse', alignItems: 'center', gap: 6 }}>
+                      <Text style={s.dgTeam} numberOfLines={1}>{b.ids.map(id => c.per[id].m.team).join('، ')}</Text>
+                      {b.tie ? <View style={s.dgTie}><Text style={s.dgTieT}>تعادل</Text></View> : null}
+                    </View>
+                  </View>
+                  <View style={s.dgPts}>
+                    <Text style={s.dgPtsN}>{b.min}</Text>
+                    <Text style={s.dgPtsL}>pts</Text>
+                  </View>
+                </TouchableOpacity>
               ))}
             </View>
           ),
@@ -1322,6 +1341,7 @@ const s = StyleSheet.create({
   drawerIcon: { fontSize: 18, width: 26, textAlign: 'center', color: '#fff' },
   drawerT: { color: '#fff', fontSize: 16, fontWeight: '700', textAlign: 'right' },
   fixedPage: { flex: 1, padding: 14, gap: 14 },
+  secHeadWeb: { position: 'sticky', top: 0, zIndex: 2 },
   secHead: { backgroundColor: C.card, borderTopLeftRadius: 12, borderTopRightRadius: 12, overflow: 'hidden', borderBottomWidth: 1, borderColor: C.line },
   secBody: { backgroundColor: C.card, borderBottomLeftRadius: 12, borderBottomRightRadius: 12, overflow: 'hidden', marginBottom: 14 },
   secAlone: { borderTopLeftRadius: 12, borderTopRightRadius: 12 },
@@ -1345,6 +1365,18 @@ const s = StyleSheet.create({
   pillT: { fontSize: 11, fontWeight: '700' },
   hmar: { flexDirection: 'row-reverse', gap: 14, alignItems: 'center', backgroundColor: C.donkeyBg, borderWidth: 1, borderColor: C.donkey, borderRadius: 12, padding: 16 },
   hmarBig: { fontSize: 44 },
+  dgList: { padding: 10, gap: 8 },
+  dgCard: { flexDirection: 'row-reverse', alignItems: 'center', gap: 12, backgroundColor: C.card, borderRadius: 12, padding: 8, paddingLeft: 10, borderWidth: 1, borderColor: C.line, shadowColor: '#37003c', shadowOpacity: 0.06, shadowRadius: 6, shadowOffset: { width: 0, height: 2 }, elevation: 1 },
+  dgGw: { width: 50, height: 50, borderRadius: 10, backgroundColor: C.pitch, alignItems: 'center', justifyContent: 'center' },
+  dgGwL: { color: C.cyan, fontSize: 9, fontWeight: '800', letterSpacing: 1 },
+  dgGwN: { color: '#fff', fontSize: 20, fontWeight: '900', marginTop: -2 },
+  dgName: { fontSize: 15, fontWeight: '800', color: C.ink, textAlign: 'right' },
+  dgTeam: { fontSize: 12, color: C.muted, textAlign: 'right', flexShrink: 1 },
+  dgTie: { backgroundColor: '#fff0f5', borderRadius: 999, paddingHorizontal: 7, paddingVertical: 1, borderWidth: 1, borderColor: '#ffc2d6' },
+  dgTieT: { color: C.pink, fontSize: 10, fontWeight: '800' },
+  dgPts: { minWidth: 52, alignItems: 'center', backgroundColor: '#e9fff4', borderRadius: 10, paddingVertical: 6, paddingHorizontal: 8, borderWidth: 1, borderColor: '#b6f5d4' },
+  dgPtsN: { fontSize: 18, fontWeight: '900', color: C.pitch, fontVariant: ['tabular-nums'] },
+  dgPtsL: { fontSize: 10, color: C.muted, marginTop: -2 },
   donkeyRow: { flexDirection: 'row-reverse', alignItems: 'center', gap: 10, backgroundColor: C.card, borderRadius: 14, paddingVertical: 10, paddingHorizontal: 12, shadowColor: '#37003c', shadowOpacity: 0.08, shadowRadius: 8, shadowOffset: { width: 0, height: 2 }, elevation: 2 },
   donkeyIcon: { width: 40, height: 40, borderRadius: 20, backgroundColor: C.donkeyBg, alignItems: 'center', justifyContent: 'center' },
   donkeyName: { fontSize: 16, fontWeight: '800', color: C.ink, textAlign: 'right' },
