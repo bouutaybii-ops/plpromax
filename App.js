@@ -1088,7 +1088,7 @@ export default function App() {
   // wla kol 5 d9aye9). Bla hadchi, l-onglet wla l-icône f l'écran d'accueil kayb9aw f nouskha 9dima.
   useEffect(() => {
     if (Platform.OS !== 'web' || typeof document === 'undefined') return;
-    const bundle = s => (s.match(/\/_expo\/static\/js\/web\/entry-[^"']+\.js/) || [])[0];
+    const bundle = s => (s.match(/\/_expo\/static\/js\/web\/entry-[^"'\s]+?\.js/) || [])[0];
     const mine = bundle([...document.scripts].map(x => x.src).join(' '));
     if (!mine) return;
     const check = () => fetch('/', { cache: 'no-store' }).then(r => r.text()).then(html => {
