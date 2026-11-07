@@ -7,6 +7,7 @@ import {
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { fixturesByTeam, liveStats, liveTeam, provisionalBonus } from './live';
 
 /* ============ CONFIG DYAL LA LIGUE (ghir l'admin kaybeddelha) ============ */
 const CONFIG = {
@@ -78,17 +79,35 @@ async function loadLeague() {
   boot.elements.forEach(el => { players[el.id] = { n: el.web_name, t: el.element_type, team: el.team }; });
   const teams = {};
   boot.teams.forEach(t => { teams[t.id] = t.short_name; });
+
+  // Jawla mazal kat-tl3eb: l-history dyal FPL ma kaytbeddelch live, donc kan7esbo l-points
+  // dyal kol wa7ed mn l'équipe dyalo + les stats live + bonus provisoire + auto-subs.
+  if (current && !finished.includes(current)) {
+    try {
+      const ctx = await loadGwContext(current, players);
+      const allPicks = await Promise.all(managers.map(m => getJson(`/entry/${m.id}/event/${current}/picks/`).catch(() => null)));
+      managers.forEach((m, i) => {
+        const pk = allPicks[i];
+        if (!pk) return;
+        const t = liveTeam({ picks: pk.picks, chip: pk.active_chip, players, ...ctx });
+        const hit = (pk.entry_history || {}).event_transfers_cost || 0;
+        m.gws[current] = { p: t.total - hit, raw: t.total, h: hit, c: pk.active_chip || '', bench: t.benchPts, tr: (pk.entry_history || {}).event_transfers || 0, live: true, left: t.left, prov: t.provisional };
+      });
+    } catch {}
+  }
   return { leagueName: league.league.name, managers, finished, current, players, teams, fetchedAt: new Date().toISOString() };
 }
 
-async function loadPicks(entryId, gw) {
-  const [picks, live] = await Promise.all([
-    getJson(`/entry/${entryId}/event/${gw}/picks/`),
-    getJson(`/event/${gw}/live/`),
-  ]);
-  const pts = {};
-  live.elements.forEach(el => { pts[el.id] = el.stats.total_points; });
-  return { picks: picks.picks, chip: picks.active_chip, pts, hist: picks.entry_history || {} };
+// Stats live dyal journée: points dyal kol joueur, les matchs, w l-bonus provisoire (mn l-BPS).
+async function loadGwContext(gw, players) {
+  const [live, fixtures] = await Promise.all([getJson(`/event/${gw}/live/`), getJson(`/fixtures/?event=${gw}`)]);
+  return { live: liveStats(live), byTeam: fixturesByTeam(fixtures), bonus: provisionalBonus(fixtures) };
+}
+
+async function loadPicks(entryId, gw, players) {
+  const [picks, ctx] = await Promise.all([getJson(`/entry/${entryId}/event/${gw}/picks/`), loadGwContext(gw, players)]);
+  const t = liveTeam({ picks: picks.picks, chip: picks.active_chip, players, ...ctx });
+  return { picks: t.rows, chip: picks.active_chip, hist: picks.entry_history || {}, total: t.total, left: t.left, prov: t.provisional };
 }
 
 /* ---------------- rules ---------------- */
@@ -325,6 +344,8 @@ function Classement({ c, meId, open }) {
                 <View style={{ flexDirection: 'row-reverse', gap: 6, alignItems: 'center' }}>
                   <Text style={s.small} numberOfLines={1}>{x.r.m.team}</Text>
                   {x.g.c ? <Pill text={CHIPS[x.g.c]?.short || x.g.c} color={CHIPS[x.g.c]?.color} /> : null}
+                  {x.g.live && x.g.left ? <Text style={[s.small, { color: C.pink }]}>⏳{x.g.left}</Text> : null}
+                  {x.g.live && x.g.prov ? <Text style={[s.small, { color: '#c99a00', fontWeight: '700' }]}>★+{x.g.prov}</Text> : null}
                 </View>
               </View>
               <Text style={[s.num, s.colN, { color: x.g.h ? C.bad : C.muted }]}>{x.g.h ? '−' + x.g.h : '–'}</Text>
@@ -508,19 +529,26 @@ function GwNav({ list, gw, setGw }) {
   );
 }
 
-function Kit({ p, data, team, bench }) {
+function Kit({ p, data, bench }) {
   const pl = data.players[p.element] || { n: '?' };
-  const base = team.pts[p.element] || 0;
-  const pts = bench && !p.multiplier ? base : base * (p.multiplier || 1);
-  const badge = p.is_captain ? (p.multiplier === 3 ? 'TC' : 'C') : p.is_vice_captain ? 'V' : null;
+  // Banc (bla Bench Boost): kayban l-point dyal joueur wakha ma kaythesbch.
+  const pts = bench && !p.subIn ? p.base : p.pts;
+  const capNow = p.eff >= 2;
+  const badge = capNow ? (p.eff === 3 ? 'TC' : 'C') : p.is_captain ? 'C' : p.is_vice_captain ? 'V' : null;
+  const waiting = !p.done && !p.played;
+  const prov = p.bonus && (p.eff || bench) ? p.bonus : 0;
   return (
-    <View style={s.kit}>
+    <View style={[s.kit, p.subOut && { opacity: 0.45 }]}>
+      {p.subIn ? <Text style={s.subTag}>↑ دخل</Text> : p.subOut ? <Text style={[s.subTag, { backgroundColor: C.bad }]}>↓ خرج</Text> : null}
       <View style={[s.shirt, pl.t === 1 && { backgroundColor: '#f2c400' }]}>
         <Text style={[s.shirtT, pl.t === 1 && { color: C.ink }]}>{data.teams[pl.team] || ''}</Text>
         {badge ? <View style={s.capt}><Text style={s.captT}>{badge}</Text></View> : null}
       </View>
       <View style={s.kitName}><Text style={s.kitNameT} numberOfLines={1}>{pl.n}</Text></View>
-      <View style={s.kitPts}><Text style={s.kitPtsT}>{pts}</Text></View>
+      <View style={s.kitPts}>
+        <Text style={s.kitPtsT}>{waiting ? '⏳' : pts}</Text>
+        {prov ? <Text style={s.bonusT}>+{prov * Math.max(1, p.eff || 1)}★</Text> : null}
+      </View>
     </View>
   );
 }
@@ -538,12 +566,12 @@ function Pitch({ team, data }) {
         <View style={s.circle} />
         {[1, 2, 3, 4].map(t => (
           <View key={t} style={s.lineRow}>
-            {line(t).map(p => <Kit key={p.element} p={p} data={data} team={team} />)}
+            {line(t).map(p => <Kit key={p.element} p={p} data={data} />)}
           </View>
         ))}
       </View>
       <View style={s.benchRow}>
-        {bench.map(p => <Kit key={p.element} p={p} data={data} team={team} bench={team.chip !== 'bboost'} />)}
+        {bench.map(p => <Kit key={p.element} p={p} data={data} bench={team.chip !== 'bboost'} />)}
       </View>
     </View>
   );
@@ -560,9 +588,9 @@ function Player({ c, data, id, isMe, onLogout, onBack, staff, onSession, onStaff
     if (!gw) return;
     let alive = true;
     setTeam(null); setTErr(null);
-    loadPicks(id, gw).then(t => alive && setTeam(t)).catch(() => alive && setTErr('ما قدرتش نجيب الفريق.'));
+    loadPicks(id, gw, data.players).then(t => alive && setTeam(t)).catch(() => alive && setTErr('ما قدرتش نجيب الفريق.'));
     return () => { alive = false; };
-  }, [id, gw]);
+  }, [id, gw, data.players, data.fetchedAt]);
   if (!r) return null;
   const max = Math.max(1, ...r.list.map(x => x.p));
   const donk = new Set(r.donkeys);
@@ -588,6 +616,11 @@ function Player({ c, data, id, isMe, onLogout, onBack, staff, onSession, onStaff
           <View style={s.gwSumBox}><Text style={s.gwSumN}>{g.h ? '−' + g.h : 0}</Text><Text style={s.small}>تبديلات</Text></View>
           <View style={s.gwSumBox}><Text style={s.gwSumN}>{team && team.hist.rank ? fmt(team.hist.rank) : '–'}</Text><Text style={s.small}>ترتيب الجولة</Text></View>
         </View>
+        {g.live ? (
+          <Text style={[s.small, { textAlign: 'center', paddingBottom: 8, color: C.pink }]}>
+            {'🔴 live'}{g.left ? ` · ⏳ باقي ${g.left} لاعبين` : ' · سالاو كاملين'}{g.prov ? ` · ★ +${g.prov} بونيس مؤقت` : ''}
+          </Text>
+        ) : null}
         {g.c ? <View style={{ alignItems: 'center', paddingBottom: 8 }}><Pill text={CHIPS[g.c]?.label} color={CHIPS[g.c]?.color} /></View> : null}
         {donk.has(gw) ? <Text style={[s.txt, { textAlign: 'center', color: C.donkey, paddingBottom: 8, fontWeight: '700' }]}>🐴 حمار هاد الجولة</Text> : null}
         {tErr ? <Text style={{ color: C.bad, padding: 14, textAlign: 'right' }}>{tErr}</Text> :
@@ -989,14 +1022,17 @@ export default function App() {
   const [sess, setSessState] = useState(null);
   const setSess = x => { setSessState(x); if (x) AsyncStorage.setItem('fb:sess', JSON.stringify(x)).catch(() => {}); else AsyncStorage.removeItem('fb:sess').catch(() => {}); };
 
-  const refresh = useCallback(async () => {
-    setLoading(true); setError(null);
+  // silent: actualisation automatique, bla spinner.
+  const refresh = useCallback(async (silent) => {
+    if (silent !== true) setLoading(true);
+    setError(null);
     try {
       const d = await loadLeague();
       setData(d);
       const { players, ...light } = d;
       AsyncStorage.setItem('fpl:data', JSON.stringify(light)).catch(() => {});
     } catch (e) {
+      if (silent === true) return; // l-actualisation automatique tfashlat: kanb9aw b les données l-9dima
       setError(Platform.OS === 'web' ? 'المتصفح كيمنع الاتصال بـ FPL. حل التطبيق فـ Expo Go.' : 'ما قدرتش نجيب المعطيات. تأكد من الأنترنيت وسحب للأسفل.');
     } finally { setLoading(false); }
   }, []);
@@ -1015,6 +1051,14 @@ export default function App() {
       refresh();
     })();
   }, [refresh]);
+
+  // Wast la journée: kan3awdo njibo les points kol d9i9a.
+  const liveNow = !!(data && data.current && !data.finished.includes(data.current));
+  useEffect(() => {
+    if (!liveNow) return;
+    const t = setInterval(() => refresh(true), 60000);
+    return () => clearInterval(t);
+  }, [liveNow, refresh]);
 
   const login = (id, x) => { if (x) setSess(x); setMeId(id); setTab('table'); AsyncStorage.setItem('fpl:me', String(id)).catch(() => {}); };
   const logout = () => { setMeId(null); setViewId(null); setSess(null); AsyncStorage.removeItem('fpl:me').catch(() => {}); };
@@ -1065,7 +1109,7 @@ export default function App() {
           <ScrollView
             style={{ flex: 1, backgroundColor: C.bg }}
             contentContainerStyle={{ padding: 14, gap: 14, paddingBottom: 40 }}
-            refreshControl={<RefreshControl refreshing={loading} onRefresh={refresh} />}
+            refreshControl={<RefreshControl refreshing={loading} onRefresh={() => refresh()} />}
           >
             {error ? <View style={s.err}><Text style={{ color: C.bad, textAlign: 'right' }}>{error}</Text></View> : null}
             {viewId ? <Player key={viewId} c={c} data={data} id={viewId} onBack={() => setViewId(null)} /> :
@@ -1165,7 +1209,9 @@ const s = StyleSheet.create({
   captT: { color: '#fff', fontSize: 10, fontWeight: '900' },
   kitName: { marginTop: 3, backgroundColor: '#fff', borderTopLeftRadius: 4, borderTopRightRadius: 4, paddingHorizontal: 3, width: 66 },
   kitNameT: { fontSize: 10, fontWeight: '700', color: C.ink, textAlign: 'center' },
-  kitPts: { backgroundColor: C.pitch, borderBottomLeftRadius: 4, borderBottomRightRadius: 4, width: 66 },
+  kitPts: { backgroundColor: C.pitch, borderBottomLeftRadius: 4, borderBottomRightRadius: 4, width: 66, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 3 },
+  bonusT: { color: '#ffd400', fontSize: 9, fontWeight: '800' },
+  subTag: { position: 'absolute', top: -6, zIndex: 2, backgroundColor: C.good, color: '#fff', fontSize: 8, fontWeight: '800', paddingHorizontal: 4, borderRadius: 4, overflow: 'hidden' },
   seg: { flexDirection: 'row-reverse', backgroundColor: C.card, borderRadius: 999, padding: 4, gap: 4 },
   segBtn: { flex: 1, paddingVertical: 9, borderRadius: 999, alignItems: 'center' },
   segOn: { backgroundColor: C.pitch },
