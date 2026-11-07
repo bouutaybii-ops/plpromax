@@ -9,6 +9,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { fixturesByTeam, liveStats, liveTeam, provisionalBonus } from './live';
 import { donkeyDeadline, formatMoroccoDate, splitCountdown } from './donkey';
+import { leaguePickStats, leagueStats } from './stats';
+import { Heatmap, Legend, LineChart, RankBars, VIZ, divergingColor } from './charts';
 
 /* ============ CONFIG DYAL LA LIGUE (ghir l'admin kaybeddelha) ============ */
 const CONFIG = {
@@ -73,7 +75,7 @@ async function loadLeague() {
     const gws = {};
     (h.current || []).forEach(g => {
       const hit = g.event_transfers_cost || 0;
-      gws[g.event] = { p: g.points - hit, raw: g.points, h: hit, c: chipBy[g.event] || '', bench: g.points_on_bench || 0, tr: g.event_transfers || 0 };
+      gws[g.event] = { p: g.points - hit, raw: g.points, h: hit, c: chipBy[g.event] || '', bench: g.points_on_bench || 0, tr: g.event_transfers || 0, v: (g.value || 0) / 10, bank: (g.bank || 0) / 10, or: g.overall_rank };
     });
     return { id: e.entry, name: e.player_name, team: e.entry_name, gws, chips: (h.chips || []).map(ch => ({ name: ch.name, gw: ch.event })) };
   });
@@ -105,11 +107,14 @@ async function loadLeague() {
         if (!pk) return;
         const t = liveTeam({ picks: pk.picks, chip: pk.active_chip, players, live: ctx.live, byTeam: ctx.byTeam, bonus: ctx.bonus });
         const hit = (pk.entry_history || {}).event_transfers_cost || 0;
-        m.gws[current] = { p: t.total - hit, raw: t.total, h: hit, c: pk.active_chip || '', bench: t.benchPts, tr: (pk.entry_history || {}).event_transfers || 0, live: true, left: t.left, prov: t.provisional };
+        m.gws[current] = { ...(m.gws[current] || {}), p: t.total - hit, raw: t.total, h: hit, c: pk.active_chip || '', bench: t.benchPts, tr: (pk.entry_history || {}).event_transfers || 0, live: true, left: t.left, prov: t.provisional };
       });
     } catch {}
   }
-  return { leagueName: league.league.name, managers, finished, current, players, teams, leaguePicks, fetchedAt: new Date().toISOString() };
+  const events = {};
+  boot.events.forEach(ev => { events[ev.id] = { avg: ev.average_entry_score, high: ev.highest_score }; });
+  const phases = (boot.phases || []).filter(ph => ph.id > 1).map(ph => ({ id: ph.id, name: ph.name, from: ph.start_event, to: ph.stop_event }));
+  return { leagueName: league.league.name, managers, finished, current, players, teams, leaguePicks, events, phases, fetchedAt: new Date().toISOString() };
 }
 
 // Stats live dyal journée: points dyal kol joueur, les matchs, w l-bonus provisoire (mn l-BPS).
@@ -549,66 +554,237 @@ function Hmar({ c, open, refreshControl }) {
     />
   );
 }
-function Stats({ c, open, refreshControl }) {
-  const name = id => c.per[id].m.name;
-  const chipRows = Object.keys(CHIPS).map(k => ({
-    k, users: c.table.flatMap(r => r.m.chips.filter(ch => ch.name === k && ch.gw >= CONFIG.startGw).map(ch => ({ id: r.m.id, gw: ch.gw }))),
-  })).filter(x => x.users.length || x.k !== 'manager');
-  const avg = r => (c.gws.length ? r.list.filter(x => c.gws.includes(x.gw)).reduce((a, x) => a + x.p, 0) / c.gws.length : 0);
-  const byAvg = [...c.table].sort((a, b) => avg(b) - avg(a));
-  const byHits = [...c.table].filter(r => r.hits).sort((a, b) => b.hits - a.hits);
-  const byBench = [...c.table].sort((a, b) => b.bench - a.bench).slice(0, 5);
-  const byWins = [...c.table].filter(r => r.wins.length).sort((a, b) => b.wins.length - a.wins.length);
+function Stats({ c, data, meId, open, refreshControl }) {
+  const S = useMemo(() => leagueStats(data.managers, { phases: data.phases || [], events: data.events || {} }), [data]);
+  const sel = useMemo(() => Object.fromEntries(Object.entries(data.players || {}).map(([id, pl]) => [id, pl.sel])), [data]);
+  const P = useMemo(() => leaguePickStats(data.leaguePicks, sel), [data, sel]);
+  const name = id => (c.per[id] ? c.per[id].m.name : '?');
+  const first = id => name(id).split(' ')[0];
+  const player = el => (data.players[el] || {}).n || '?';
+  const lead = c.table[0] ? c.table[0].m.id : null;
+  const second = c.table[1] ? c.table[1].m.id : null;
+  const [focusId, setFocus] = useState(meId === lead ? second : lead);
+  const focus = [
+    ...(meId ? [{ id: meId, color: VIZ.me, label: 'نتا' }] : []),
+    ...(focusId && focusId !== meId ? [{ id: focusId, color: VIZ.focus, label: first(focusId) }] : []),
+  ];
+  if (!S.gws.length) return <Card><Text style={[s.txt, { padding: 16 }]}>مازال ما كاين حتى جولة.</Text></Card>;
+
+  const gapLead = second ? c.per[lead].total - c.per[second].total : 0;
+  const capTop = P.captains[0];
+  const picker = (
+    <View style={{ paddingBottom: 8 }}>
+      <Text style={[s.small, { paddingHorizontal: 12, paddingTop: 8 }]}>قارن مع:</Text>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ flexDirection: 'row-reverse', gap: 6, paddingHorizontal: 12, paddingTop: 6 }}>
+        {c.table.filter(r => r.m.id !== meId).map(r => (
+          <TouchableOpacity key={r.m.id} onPress={() => setFocus(r.m.id)} style={[s.pickChip, focusId === r.m.id && s.pickChipOn]}>
+            <Text style={[s.pickChipT, focusId === r.m.id && { color: '#fff' }]}>{first(r.m.id)}</Text>
+          </TouchableOpacity>
+        ))}
+      </ScrollView>
+      <Legend items={[...(meId ? [{ color: VIZ.me, label: 'نتا' }] : []), { color: VIZ.focus, label: focusId ? name(focusId) : '' }, { color: VIZ.context, label: 'الباقي' }]} />
+    </View>
+  );
+  const rowsBy = (key, f, filter = () => true) => S.per.filter(filter).map(x => ({ id: x.id, label: first(x.id), value: x[key], display: f ? f(x) : x[key] })).sort((a, b) => b.value - a.value);
+  const awards = [
+    S.awards.bestGw && ['🚀', 'أحسن جولة', name(S.awards.bestGw.id), `${S.awards.bestGw.p} pts · GW${S.awards.bestGw.gw}`],
+    S.awards.climber && ['📈', 'أكبر طلعة', name(S.awards.climber.id), `+${S.awards.climber.v} بلايص · GW${S.awards.climber.gw}`],
+    S.awards.steady && ['🎯', 'الأكثر انتظاماً', name(S.awards.steady.id), `σ ${S.awards.steady.sd.toFixed(1)}`],
+    S.awards.benchDisaster && ['🪑', 'كارثة البنك', name(S.awards.benchDisaster.id), `${S.awards.benchDisaster.bench} pts فالبنك · GW${S.awards.benchDisaster.gw}`],
+    S.awards.bigHit && ['💸', 'أكبر hit', name(S.awards.bigHit.id), `−${S.awards.bigHit.h} · GW${S.awards.bigHit.gw}`],
+    S.awards.worstGw && ['🥶', 'أسوأ جولة', name(S.awards.worstGw.id), `${S.awards.worstGw.p} pts · GW${S.awards.worstGw.gw}`],
+    S.awards.spoon && ['🥄', 'الملعقة الخشبية', name(S.awards.spoon.id), `${S.awards.spoon.total} pts`],
+  ].filter(Boolean);
+
   return (
     <Sections
       refreshControl={refreshControl}
       sections={[
         {
-          title: 'الأرقام القياسية',
+          bare: true,
+          body: (
+            <View style={s.statHero}>
+              <Text style={s.statHeroT}>GW{S.lastGw}{S.live ? ' · 🔴 live' : ''}</Text>
+              <View style={s.statTiles}>
+                {[
+                  ['نجم الجولة', S.gwTop ? `${S.gwTop.v}` : '–', S.gwTop ? first(S.gwTop.id) : ''],
+                  ['معدل الدوري', S.leagueAvg != null ? S.leagueAvg.toFixed(0) : '–', S.globalAvg != null ? `العالمي ${S.globalAvg}` : ''],
+                  ['المتصدر', lead ? first(lead) : '–', second ? `+${gapLead} على ${first(second)}` : ''],
+                  ['كابتن الدوري', capTop ? player(capTop.el) : '–', capTop ? `${capTop.v}/${P.n} دارو` : ''],
+                ].map(([l, v, sub]) => (
+                  <View key={l} style={s.statTile}>
+                    <Text style={s.statTileL}>{l}</Text>
+                    <Text style={s.statTileV} numberOfLines={1}>{v}</Text>
+                    <Text style={s.statTileS} numberOfLines={1}>{sub}</Text>
+                  </View>
+                ))}
+              </View>
+            </View>
+          ),
+        },
+        {
+          title: 'سباق النقاط', sub: 'شحال بعيد على المتصدر', head: picker,
+          body: <LineChart series={S.gap} gws={S.gws} focus={focus} invert yMin={0} unit=" pts" />,
+        },
+        {
+          title: 'سباق الترتيب', sub: 'الترتيب فكل جولة',
+          body: <LineChart series={S.rank} gws={S.gws} focus={focus} invert yMin={1} yMax={S.ids.length} ticks={Math.min(5, S.ids.length - 1)} fmt={v => '#' + v} />,
+        },
+        {
+          title: 'خريطة الجولات', sub: 'النقاط مقارنة مع معدل الدوري',
           body: (
             <>
-              {c.best ? <Row left={`أعلى سكور: ${name(c.best.id)} (GW${c.best.gw}${c.best.c ? ' · ' + CHIPS[c.best.c]?.short : ''})`} right={c.best.p} onPress={() => open(c.best.id)} /> : null}
-              {c.record ? <Row left={`أعلى سكور بلا خاصيات: ${c.record.ids.map(name).join('، ')} (GW${c.record.gw})`} right={c.record.p} /> : null}
-              {c.worst ? <Row left={`أقل سكور: ${name(c.worst.id)} (GW${c.worst.gw})`} right={c.worst.p} onPress={() => open(c.worst.id)} /> : null}
+              <Heatmap
+                rows={c.table.map(r => ({ id: r.m.id, label: first(r.m.id) }))}
+                gws={S.gws}
+                me={meId}
+                onRow={open}
+                cell={(id, g) => {
+                  const h = S.heat[id][g];
+                  const col = divergingColor(h.d);
+                  return { text: h.p, bg: col.bg, fg: col.fg, crown: h.best, tip: `${name(id)} · GW${g}: ${h.p} pts (${h.d >= 0 ? '+' : ''}${h.d.toFixed(0)} على المعدل ${S.avg[g].toFixed(0)})` };
+                }}
+              />
+              <Legend items={[{ color: VIZ.good[2], label: 'فوق المعدل' }, { color: VIZ.mid, label: 'قريب' }, { color: VIZ.bad[2], label: 'تحت المعدل' }, { color: '#fff', label: '👑 أحسن واحد' }]} />
+              <View style={{ height: 10 }} />
             </>
           ),
         },
         {
-          title: 'الخاصيات', sub: 'شكون لعب شنو',
-          body: chipRows.map(({ k, users }) => (
-            <View key={k} style={[s.tr, { alignItems: 'flex-start' }]}>
-              <View style={{ width: 120 }}><Pill text={CHIPS[k].label} color={CHIPS[k].color} /></View>
-              <View style={{ flex: 1, gap: 2 }}>
-                {users.length ? users.sort((a, b) => a.gw - b.gw).map(u => (
-                  <TouchableOpacity key={u.id + '-' + u.gw} onPress={() => open(u.id)}>
-                    <Text style={s.txt}>{name(u.id)} <Text style={s.muted}>· GW{u.gw}</Text></Text>
-                  </TouchableOpacity>
-                )) : <Text style={s.small}>حتى واحد مازال</Text>}
+          title: 'الأبطال', sub: 'نجم الجولة و نجم الشهر',
+          body: (
+            <>
+              <RankBars rows={S.wins.filter(x => x.v > 0).map(x => ({ id: x.id, label: first(x.id), value: x.v, display: '⭐ ' + (x.v % 1 ? x.v.toFixed(1) : x.v) })).sort((a, b) => b.value - a.value)} me={meId} focus={focusId} />
+              <View style={s.monthList}>
+                {S.months.map(m => (
+                  <View key={m.id} style={[s.monthCard, !m.done && { borderStyle: 'dashed' }]}>
+                    <Text style={s.monthName}>{m.name}{m.done ? '' : ' ⏳'}</Text>
+                    <Text style={s.monthWho} numberOfLines={1}>{m.winners.map(first).join('، ')}</Text>
+                    <Text style={s.monthPts}>{m.v} pts · GW{m.from}–{m.to}</Text>
+                  </View>
+                ))}
               </View>
+            </>
+          ),
+        },
+        {
+          title: 'الكابتن', sub: `GW${P.gw ?? ''} · شكون دار شكون`,
+          body: (
+            <>
+              <RankBars rows={P.captains.map(x => ({ id: 'c' + x.el, label: player(x.el), value: x.v, display: `${x.v}/${P.n}` }))} />
+              <View style={[s.tr, s.thRow]}>
+                <Text style={[s.th, { flex: 1 }]}>اللاعب</Text>
+                <Text style={[s.th, s.colN]}>عندهم</Text>
+                <Text style={[s.th, s.colN]}>C</Text>
+                <Text style={[s.th, s.colN]}>EO</Text>
+                <Text style={[s.th, { width: 56, textAlign: 'center' }]}>vs العالم</Text>
+              </View>
+              {P.eo.slice(0, 12).map(x => {
+                const diff = x.global != null ? x.eo - x.global : null;
+                return (
+                  <View key={x.el} style={s.tr}>
+                    <Text style={[s.txt, { flex: 1 }]} numberOfLines={1}>{player(x.el)}</Text>
+                    <Text style={[s.num, s.colN]}>{x.owned.toFixed(0)}%</Text>
+                    <Text style={[s.num, s.colN]}>{x.caps || '–'}</Text>
+                    <Text style={[s.num, s.colN, s.bold]}>{x.eo.toFixed(0)}%</Text>
+                    <Text style={[s.num, { width: 56, textAlign: 'center', fontWeight: '800', color: diff == null ? C.muted : diff >= 0 ? VIZ.good[3] : VIZ.bad[3] }]}>{diff == null ? '–' : `${diff >= 0 ? '+' : ''}${diff.toFixed(0)}`}</Text>
+                  </View>
+                );
+              })}
+              <Text style={[s.small, { padding: 10, textAlign: 'center' }]}>EO = شحال كيحسب اللاعب فالدوري (الكابتن ×2). vs العالم = الفرق مع النسبة ديال FPL.</Text>
+            </>
+          ),
+        },
+        {
+          title: 'التبديلات', sub: 'النقاط اللي ضاعو فالـ hits',
+          body: (() => {
+            const rows = rowsBy('hits', x => `−${x.hits}`, x => x.hits > 0).map(r => ({ ...r, sub: `${S.perById[r.id].tr} تبديل` }));
+            return rows.length ? <RankBars rows={rows} me={meId} focus={focusId} /> : <Text style={[s.small, { padding: 14, textAlign: 'center' }]}>حتى واحد ما دار -4.</Text>;
+          })(),
+        },
+        {
+          title: 'نقاط ضايعة فالبنك', sub: 'بلا Bench Boost',
+          body: <RankBars rows={rowsBy('bench')} me={meId} focus={focusId} />,
+        },
+        {
+          title: 'الخاصيات', sub: 'شكون لعب شنو و فاش',
+          body: (
+            <View style={{ padding: 8 }}>
+              <View style={[s.chipTotals]}>
+                {Object.keys(CHIPS).filter(k => S.chipCounts[k]).map(k => (
+                  <View key={k} style={[s.chipTotal, { borderColor: CHIPS[k].color }]}>
+                    <Text style={[s.chipTotalN, { color: CHIPS[k].color }]}>{S.chipCounts[k]}</Text>
+                    <Text style={s.chipTotalL}>{CHIPS[k].short}</Text>
+                  </View>
+                ))}
+              </View>
+              {c.table.map(r => (
+                <View key={r.m.id} style={[s.tr, { paddingVertical: 7 }]}>
+                  <Text style={[s.txt, { width: 96 }, r.m.id === meId && { color: VIZ.me, fontWeight: '900' }]} numberOfLines={1}>{first(r.m.id)}</Text>
+                  <View style={{ flex: 1, flexDirection: 'row-reverse', flexWrap: 'wrap', gap: 4 }}>
+                    {(S.chips[r.m.id] || []).length ? [...S.chips[r.m.id]].sort((a, b) => a.gw - b.gw).map(ch => (
+                      <View key={ch.name + ch.gw} style={[s.chipDot, { backgroundColor: (CHIPS[ch.name] || {}).color || C.muted }]}>
+                        <Text style={s.chipDotT}>{(CHIPS[ch.name] || {}).short || ch.name} {ch.gw}</Text>
+                      </View>
+                    )) : <Text style={s.small}>مازال</Text>}
+                  </View>
+                </View>
+              ))}
             </View>
+          ),
+        },
+        {
+          title: 'قيمة الفرقة', sub: 'و الفرق مع معدل الدوري',
+          // Kolchi 7da 100m: barres mn 0 ma kaybinouch l-far9, donc ar9am w l-far9 m3a l-moyenne.
+          body: (() => {
+            const avgV = S.per.reduce((a, x) => a + x.value, 0) / (S.per.length || 1);
+            const iso = t => '\u2066' + t + '\u2069';
+            return <RankBars bars={false} rows={S.per.map(x => ({ id: x.id, label: first(x.id), sub: 'بنك ' + iso(`£${x.bank.toFixed(1)}m`), value: x.value, display: iso(`£${x.value.toFixed(1)}m`) + `  (${x.value - avgV >= 0 ? '+' : ''}${(x.value - avgV).toFixed(1)})` })).sort((a, b) => b.value - a.value)} me={meId} focus={focusId} />;
+          })(),
+        },
+        {
+          title: 'الانتظام', sub: 'المعدل، التذبذب (σ)، و شحال من جولة فوق المعدل',
+          head: (
+            <View style={[s.tr, s.thRow]}>
+              <Text style={[s.th, { flex: 1 }]}>اللاعب</Text>
+              <Text style={[s.th, s.colN]}>المعدل</Text>
+              <Text style={[s.th, s.colN]}>σ</Text>
+              <Text style={[s.th, s.colN]}>فوق</Text>
+            </View>
+          ),
+          body: [...S.per].sort((a, b) => b.avg - a.avg).map(x => (
+            <TouchableOpacity key={x.id} style={[s.tr, x.id === meId && { backgroundColor: C.me }]} onPress={() => open(x.id)}>
+              <Text style={[s.txt, { flex: 1 }]} numberOfLines={1}>{name(x.id)}</Text>
+              <Text style={[s.num, s.colN, s.bold]}>{x.avg.toFixed(1)}</Text>
+              <Text style={[s.num, s.colN]}>{x.sd.toFixed(1)}</Text>
+              <Text style={[s.num, s.colN]}>{x.above}/{S.gws.length}</Text>
+            </TouchableOpacity>
           )),
         },
         {
-          title: 'نجم الجولة', sub: 'أعلى سكور',
-          body: byWins.map(r => <Row key={r.m.id} left={`${r.m.name}  ·  ${r.wins.map(g => 'GW' + g).join('، ')}`} right={'⭐×' + r.wins.length} onPress={() => open(r.m.id)} />),
+          title: 'كلشي ضد كلشي', sub: 'لو كان كل جولة ماتش ضد الكل',
+          body: <RankBars rows={S.allPlay.map(x => ({ id: x.id, label: first(x.id), sub: `${x.w}ر ${x.d}ت ${x.l}خ`, value: x.v, display: `${x.v.toFixed(0)}%` })).sort((a, b) => b.value - a.value)} me={meId} focus={focusId} max={100} />,
         },
         {
-          title: 'المعدل فالجولة',
-          body: byAvg.map(r => <Row key={r.m.id} left={r.m.name} right={avg(r).toFixed(1)} onPress={() => open(r.m.id)} />),
-        },
-        {
-          title: 'خسارة التبديلات', sub: 'نقاط مخصومة',
-          body: byHits.length ? byHits.map(r => <Row key={r.m.id} left={r.m.name} right={'−' + r.hits} color={C.bad} onPress={() => open(r.m.id)} />)
-            : <Text style={[s.small, { padding: 14 }]}>حتى واحد ما خلص -4.</Text>,
-        },
-        {
-          title: 'نقاط ضايعة فالبنك',
-          body: byBench.map(r => <Row key={r.m.id} left={r.m.name} right={r.bench} onPress={() => open(r.m.id)} />),
+          title: 'الجوائز', sub: 'من بداية الموسم',
+          body: (
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ flexDirection: 'row-reverse', gap: 10, padding: 12 }}>
+              {awards.map(([icon, title, who, detail]) => (
+                <TouchableOpacity key={title} style={s.awardCard} activeOpacity={0.85}>
+                  <Text style={s.awardIcon}>{icon}</Text>
+                  <Text style={s.awardTitle}>{title}</Text>
+                  <Text style={s.awardWho} numberOfLines={1}>{who}</Text>
+                  <Text style={s.awardDetail} numberOfLines={1}>{detail}</Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          ),
         },
       ]}
     />
   );
 }
+
 function GwNav({ list, gw, setGw }) {
   const [open, setOpen] = useState(false);
   const i = list.indexOf(gw);
@@ -1536,7 +1712,7 @@ export default function App() {
               {error ? <View style={[s.err, { margin: 14, marginBottom: 0 }]}><Text style={{ color: C.bad, textAlign: 'right' }}>{error}</Text></View> : null}
               {tab === 'table' ? <Classement c={c} meId={meId} open={open} refreshControl={pullToRefresh} /> :
                tab === 'hmar' ? <Hmar c={c} open={open} refreshControl={pullToRefresh} /> :
-               tab === 'stats' ? <Stats c={c} open={open} refreshControl={pullToRefresh} /> :
+               tab === 'stats' ? <Stats c={c} data={data} meId={meId} open={open} refreshControl={pullToRefresh} /> :
                <Fund c={c} refreshControl={pullToRefresh} />}
             </View>
           ) : (
@@ -1604,6 +1780,32 @@ const s = StyleSheet.create({
   pillT: { fontSize: 11, fontWeight: '700' },
   hmar: { flexDirection: 'row-reverse', gap: 14, alignItems: 'center', backgroundColor: C.donkeyBg, borderWidth: 1, borderColor: C.donkey, borderRadius: 12, padding: 16 },
   hmarBig: { fontSize: 44 },
+  statHero: { backgroundColor: C.pitch, borderRadius: 16, padding: 14, gap: 10, borderBottomWidth: 3, borderColor: C.neon },
+  statHeroT: { color: C.cyan, fontSize: 13, fontWeight: '800', textAlign: 'right' },
+  statTiles: { flexDirection: 'row-reverse', flexWrap: 'wrap', gap: 8 },
+  statTile: { width: '48%', flexGrow: 1, backgroundColor: 'rgba(255,255,255,0.08)', borderRadius: 12, padding: 10 },
+  statTileL: { color: '#d9c7dc', fontSize: 11, textAlign: 'right' },
+  statTileV: { color: '#fff', fontSize: 22, fontWeight: '900', textAlign: 'right' },
+  statTileS: { color: C.neon, fontSize: 11, fontWeight: '700', textAlign: 'right' },
+  pickChip: { borderRadius: 999, paddingHorizontal: 12, paddingVertical: 5, backgroundColor: C.bg, borderWidth: 1, borderColor: C.line },
+  pickChipOn: { backgroundColor: VIZ.focus, borderColor: VIZ.focus },
+  pickChipT: { fontSize: 13, fontWeight: '700', color: C.ink },
+  monthList: { flexDirection: 'row-reverse', flexWrap: 'wrap', gap: 8, paddingHorizontal: 12, paddingBottom: 12 },
+  monthCard: { width: '31%', flexGrow: 1, borderRadius: 12, borderWidth: 1, borderColor: C.line, padding: 8, backgroundColor: C.card },
+  monthName: { fontSize: 12, fontWeight: '900', color: C.pitch, textAlign: 'right' },
+  monthWho: { fontSize: 13, fontWeight: '800', color: C.ink, textAlign: 'right' },
+  monthPts: { fontSize: 11, color: C.muted, textAlign: 'right' },
+  chipTotals: { flexDirection: 'row-reverse', gap: 8, paddingHorizontal: 4, paddingBottom: 8 },
+  chipTotal: { flex: 1, alignItems: 'center', borderWidth: 1.5, borderRadius: 10, paddingVertical: 6 },
+  chipTotalN: { fontSize: 18, fontWeight: '900' },
+  chipTotalL: { fontSize: 11, color: C.muted, fontWeight: '700' },
+  chipDot: { borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2 },
+  chipDotT: { color: '#fff', fontSize: 11, fontWeight: '800' },
+  awardCard: { width: 150, borderRadius: 14, padding: 12, gap: 2, backgroundColor: C.pitch, borderBottomWidth: 3, borderColor: C.neon },
+  awardIcon: { fontSize: 26, textAlign: 'right' },
+  awardTitle: { color: C.cyan, fontSize: 12, fontWeight: '800', textAlign: 'right' },
+  awardWho: { color: '#fff', fontSize: 15, fontWeight: '900', textAlign: 'right' },
+  awardDetail: { color: '#d9c7dc', fontSize: 11, textAlign: 'right' },
   sheetShade: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
   sheet: { backgroundColor: C.bg, borderTopLeftRadius: 20, borderTopRightRadius: 20, overflow: 'hidden', maxHeight: '88%' },
   sheetHead: { flexDirection: 'row-reverse', alignItems: 'flex-end', gap: 12, backgroundColor: C.pitch, paddingTop: 18, paddingHorizontal: 16, paddingBottom: 0, borderBottomWidth: 3, borderColor: C.pink },
