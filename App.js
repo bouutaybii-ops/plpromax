@@ -302,7 +302,7 @@ function Login({ data, onLogin, loading, error }) {
 }
 
 /* ---------------- screens ---------------- */
-function Classement({ c, meId, open }) {
+function Classement({ c, meId, open, refreshControl }) {
   const shares = [0.5, 0.3, 0.2];
   const medal = [C.gold, C.silver, C.bronze];
   const allGws = [...new Set(c.table.flatMap(r => r.list.map(x => x.gw)))].sort((a, b) => a - b);
@@ -326,9 +326,9 @@ function Classement({ c, meId, open }) {
     const finishedD = c.byGw.find(b => b.gw === gw);
     const donkeyId = finishedD ? finishedD.ids[0] : (live && c.liveDonkey ? c.liveDonkey.ids[0] : null);
     return (
-      <>
+      <View style={s.fixedPage}>
         {Toggle}
-        <Card>
+        <View style={[s.card, s.fixedCard]}>
           <GwNav list={allGws} gw={gw} setGw={setGw} />
           {live ? <Text style={[s.small, { textAlign: 'center', paddingTop: 8, color: C.pink }]}>الجولة مازال كتلعب · النقاط live</Text> : null}
           <View style={[s.tr, s.thRow]}>
@@ -337,6 +337,7 @@ function Classement({ c, meId, open }) {
             <Text style={[s.th, s.colN]}>-4</Text>
             <Text style={[s.th, s.colN]}>النقاط</Text>
           </View>
+          <ScrollView style={{ flex: 1 }} refreshControl={refreshControl}>
           {rows.map((x, i) => (
             <TouchableOpacity key={x.r.m.id} onPress={() => open(x.r.m.id)} style={[s.tr, x.r.m.id === meId && { backgroundColor: C.me }]}>
               <View style={[s.rk, x.g.p === max && { backgroundColor: C.gold }, x.r.m.id === donkeyId && { backgroundColor: C.donkey }]}>
@@ -355,21 +356,27 @@ function Classement({ c, meId, open }) {
               <Text style={[s.num, s.colN, s.bold]}>{x.g.p}</Text>
             </TouchableOpacity>
           ))}
-        </Card>
-      </>
+          </ScrollView>
+        </View>
+      </View>
     );
   }
 
   return (
-    <>
+    <View style={s.fixedPage}>
       {Toggle}
-      <Card title="الترتيب العام" sub={c.liveGw ? `GW${c.liveGw} مازال كتلعب` : 'بعد خصم التبديلات'}>
+      <View style={[s.card, s.fixedCard]}>
+        <View style={s.cardH}>
+          <Text style={s.h2}>الترتيب العام</Text>
+          <Text style={s.muted}>{c.liveGw ? `GW${c.liveGw} مازال كتلعب` : 'بعد خصم التبديلات'}</Text>
+        </View>
         <View style={[s.tr, s.thRow]}>
           <Text style={[s.th, { width: 30 }]}>#</Text>
           <Text style={[s.th, { flex: 1 }]}>اللاعب</Text>
           <Text style={[s.th, s.colN]}>{c.showGw ? 'GW' + c.showGw : ''}</Text>
           <Text style={[s.th, s.colN]}>المجموع</Text>
         </View>
+        <ScrollView style={{ flex: 1 }} refreshControl={refreshControl}>
         {c.table.map((r, i) => (
           <TouchableOpacity key={r.m.id} onPress={() => open(r.m.id)} style={[s.tr, r.m.id === meId && { backgroundColor: C.me }]}>
             <View style={[s.rk, i < 3 && { backgroundColor: medal[i] }]}>
@@ -383,8 +390,9 @@ function Classement({ c, meId, open }) {
             <Text style={[s.num, s.colN, s.bold]}>{r.total}</Text>
           </TouchableOpacity>
         ))}
-      </Card>
-    </>
+        </ScrollView>
+      </View>
+    </View>
   );
 }
 
@@ -1178,6 +1186,13 @@ export default function App() {
               </TouchableOpacity>
             </TouchableOpacity>
           </Modal>
+          {tab === 'table' && !viewId ? (
+            // Classement: l-entête dyal l-jadwal tabet, ghir les lignes dyal les joueurs kayscrolliw.
+            <View style={{ flex: 1, backgroundColor: C.bg }}>
+              {error ? <View style={[s.err, { margin: 14, marginBottom: 0 }]}><Text style={{ color: C.bad, textAlign: 'right' }}>{error}</Text></View> : null}
+              <Classement c={c} meId={meId} open={open} refreshControl={<RefreshControl refreshing={loading} onRefresh={() => refresh()} />} />
+            </View>
+          ) : (
           <ScrollView
             style={{ flex: 1, backgroundColor: C.bg }}
             contentContainerStyle={{ padding: 14, gap: 14, paddingBottom: 40 }}
@@ -1185,7 +1200,6 @@ export default function App() {
           >
             {error ? <View style={s.err}><Text style={{ color: C.bad, textAlign: 'right' }}>{error}</Text></View> : null}
             {viewId ? <Player key={viewId} c={c} data={data} id={viewId} onBack={() => setViewId(null)} /> :
-             tab === 'table' ? <Classement c={c} meId={meId} open={open} /> :
              tab === 'hmar' ? <Hmar c={c} open={open} /> :
              tab === 'stats' ? <Stats c={c} open={open} /> :
              tab === 'me' ? <Player key={meId} c={c} data={data} id={meId} isMe onLogout={logout} staff={sess ? (isAdmin ? 'admin' : sess.uid === CONFIG.staff.treasurer ? 'treasurer' : 'other') : null} onSession={setSess} onStaffOut={() => (CONFIG.protectedIds[meId] ? logout() : setSess(null))} /> :
@@ -1195,6 +1209,7 @@ export default function App() {
              <Rules />}
             <Text style={[s.small, { textAlign: 'center' }]}>سحب للأسفل باش تحدث</Text>
           </ScrollView>
+          )}
         </>
       )}
     </SafeAreaView>
@@ -1220,6 +1235,8 @@ const s = StyleSheet.create({
   drawerItemOn: { backgroundColor: C.neon },
   drawerIcon: { fontSize: 18, width: 26, textAlign: 'center', color: '#fff' },
   drawerT: { color: '#fff', fontSize: 16, fontWeight: '700', textAlign: 'right' },
+  fixedPage: { flex: 1, padding: 14, gap: 14 },
+  fixedCard: { flex: 1 },
   card: { backgroundColor: C.card, borderRadius: 12, overflow: 'hidden', shadowColor: '#37003c', shadowOpacity: 0.08, shadowRadius: 8, shadowOffset: { width: 0, height: 2 }, elevation: 2 },
   cardH: { flexDirection: 'row-reverse', justifyContent: 'space-between', alignItems: 'baseline', padding: 12, borderBottomWidth: 1, borderColor: C.line },
   h2: { fontSize: 18, fontWeight: '800', color: C.pitch, textAlign: 'right' },
