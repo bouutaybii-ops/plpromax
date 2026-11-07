@@ -198,6 +198,37 @@ const fmt = n => String(Math.round(n || 0)).replace(/\B(?=(\d{3})+(?!\d))/g, ' '
 const fmtShort = n => (n >= 1e6 ? (n / 1e6).toFixed(2).replace(/\.?0+$/, '') + 'M' : n >= 1e4 ? Math.round(n / 1e3) + 'k' : fmt(n));
 
 /* ---------------- UI bits ---------------- */
+// Page b bzaf dyal les cartes: l-3onwan dyal kol carte (w s-ster dyal l-colonnes) kayb9a lase9
+// lfo9 mli kanscrolliw f had l-carte, 7tta tji l-carte li moraha.
+function Sections({ sections, refreshControl, footer }) {
+  const children = [];
+  const sticky = [];
+  sections.filter(Boolean).forEach((sec, i) => {
+    const hasHead = !!(sec.title || sec.head);
+    if (hasHead) {
+      sticky.push(children.length);
+      children.push(
+        <View key={'h' + i} style={s.secHead}>
+          {sec.title ? (
+            <View style={s.cardH}>
+              <Text style={s.h2}>{sec.title}</Text>
+              {sec.sub ? <Text style={s.muted}>{sec.sub}</Text> : null}
+            </View>
+          ) : null}
+          {sec.head || null}
+        </View>
+      );
+    }
+    children.push(<View key={'b' + i} style={sec.bare ? { marginBottom: 14 } : [s.secBody, !hasHead && s.secAlone]}>{sec.body}</View>);
+  });
+  return (
+    <ScrollView style={{ flex: 1, backgroundColor: C.bg }} contentContainerStyle={{ padding: 14, paddingBottom: 40 }} stickyHeaderIndices={sticky} refreshControl={refreshControl}>
+      {children}
+      {footer || null}
+    </ScrollView>
+  );
+}
+
 function Card({ title, sub, children }) {
   return (
     <View style={s.card}>
@@ -396,12 +427,12 @@ function Classement({ c, meId, open, refreshControl }) {
   );
 }
 
-function Hmar({ c, open }) {
+function Hmar({ c, open, refreshControl }) {
   const name = id => c.per[id].m.name;
   const cur = c.byGw[c.byGw.length - 1];
   const pens = [...c.table].sort((a, b) => b.pen.amount - a.pen.amount || b.donkeys.length - a.donkeys.length);
-  return (
-    <>
+  const banners = (
+    <View style={{ gap: 10 }}>
       {c.liveDonkey ? (
         <View style={[s.hmar, { borderStyle: 'dashed' }]}>
           <Text style={s.hmarBig}>⏳</Text>
@@ -422,36 +453,52 @@ function Hmar({ c, open }) {
           </View>
         </View>
       ) : <Card><Text style={[s.txt, { padding: 16 }]}>حتى جولة ما سالات من بداية الدوري.</Text></Card>}
-
-      <Card title="العقوبات" sub="بالدرهم">
-        {pens.map(r => (
-          <TouchableOpacity key={r.m.id} style={s.tr} onPress={() => open(r.m.id)}>
-            <Text style={[s.txt, { flex: 1 }]} numberOfLines={1}>{r.m.name}</Text>
-            <View style={{ flexDirection: 'row-reverse', gap: 4 }}>
-              {r.pen.streaks ? <Pill kind="bad" text={'متتابعين ×' + r.pen.streaks} /> : null}
-              {r.pen.triples ? <Pill kind="d" text={'3 مرات ×' + r.pen.triples} /> : null}
+    </View>
+  );
+  return (
+    <Sections
+      refreshControl={refreshControl}
+      sections={[
+        { body: banners, bare: true },
+        {
+          title: 'العقوبات', sub: 'بالدرهم',
+          head: (
+            <View style={[s.tr, s.thRow]}>
+              <Text style={[s.th, { flex: 1 }]}>اللاعب</Text>
+              <Text style={[s.th, s.colN]}>حمار</Text>
+              <Text style={[s.th, s.colN]}>DH</Text>
             </View>
-            <Text style={[s.num, s.colN]}>🐴{r.donkeys.length}</Text>
-            <Text style={[s.num, s.colN, s.bold]}>{r.pen.amount}</Text>
-          </TouchableOpacity>
-        ))}
-      </Card>
-
-      <Card title="الحمير جولة بجولة">
-        <View style={s.grid}>
-          {[...c.byGw].reverse().map(b => (
-            <View key={b.gw} style={s.gw}>
-              <Text style={s.small}>GW {b.gw} · {b.min} pts{b.tie ? ' · تعادل، حسمو المجموع' : ''}</Text>
-              <Text style={[s.txt, s.bold]}>{b.ids.map(name).join('، ')}</Text>
+          ),
+          body: pens.map(r => (
+            <TouchableOpacity key={r.m.id} style={s.tr} onPress={() => open(r.m.id)}>
+              <Text style={[s.txt, { flex: 1 }]} numberOfLines={1}>{r.m.name}</Text>
+              <View style={{ flexDirection: 'row-reverse', gap: 4 }}>
+                {r.pen.streaks ? <Pill kind="bad" text={'متتابعين ×' + r.pen.streaks} /> : null}
+                {r.pen.triples ? <Pill kind="d" text={'3 مرات ×' + r.pen.triples} /> : null}
+              </View>
+              <Text style={[s.num, s.colN]}>🐴{r.donkeys.length}</Text>
+              <Text style={[s.num, s.colN, s.bold]}>{r.pen.amount}</Text>
+            </TouchableOpacity>
+          )),
+        },
+        {
+          title: 'الحمير جولة بجولة',
+          body: (
+            <View style={s.grid}>
+              {[...c.byGw].reverse().map(b => (
+                <View key={b.gw} style={s.gw}>
+                  <Text style={s.small}>GW {b.gw} · {b.min} pts{b.tie ? ' · تعادل، حسمو المجموع' : ''}</Text>
+                  <Text style={[s.txt, s.bold]}>{b.ids.map(name).join('، ')}</Text>
+                </View>
+              ))}
             </View>
-          ))}
-        </View>
-      </Card>
-    </>
+          ),
+        },
+      ]}
+    />
   );
 }
-
-function Stats({ c, open }) {
+function Stats({ c, open, refreshControl }) {
   const name = id => c.per[id].m.name;
   const chipRows = Object.keys(CHIPS).map(k => ({
     k, users: c.table.flatMap(r => r.m.chips.filter(ch => ch.name === k && ch.gw >= CONFIG.startGw).map(ch => ({ id: r.m.id, gw: ch.gw }))),
@@ -462,549 +509,89 @@ function Stats({ c, open }) {
   const byBench = [...c.table].sort((a, b) => b.bench - a.bench).slice(0, 5);
   const byWins = [...c.table].filter(r => r.wins.length).sort((a, b) => b.wins.length - a.wins.length);
   return (
-    <>
-      <Card title="الأرقام القياسية">
-        {c.best ? <Row left={`أعلى سكور: ${name(c.best.id)} (GW${c.best.gw}${c.best.c ? ' · ' + CHIPS[c.best.c]?.short : ''})`} right={c.best.p} onPress={() => open(c.best.id)} /> : null}
-        {c.record ? <Row left={`أعلى سكور بلا خاصيات: ${c.record.ids.map(name).join('، ')} (GW${c.record.gw})`} right={c.record.p} /> : null}
-        {c.worst ? <Row left={`أقل سكور: ${name(c.worst.id)} (GW${c.worst.gw})`} right={c.worst.p} onPress={() => open(c.worst.id)} /> : null}
-      </Card>
-
-      <Card title="الخاصيات" sub="شكون لعب شنو">
-        {chipRows.map(({ k, users }) => (
-          <View key={k} style={[s.tr, { alignItems: 'flex-start' }]}>
-            <View style={{ width: 120 }}><Pill text={CHIPS[k].label} color={CHIPS[k].color} /></View>
-            <View style={{ flex: 1, gap: 2 }}>
-              {users.length ? users.sort((a, b) => a.gw - b.gw).map(u => (
-                <TouchableOpacity key={u.id + '-' + u.gw} onPress={() => open(u.id)}>
-                  <Text style={s.txt}>{name(u.id)} <Text style={s.muted}>· GW{u.gw}</Text></Text>
-                </TouchableOpacity>
-              )) : <Text style={s.small}>حتى واحد مازال</Text>}
-            </View>
-          </View>
-        ))}
-      </Card>
-
-      <Card title="نجم الجولة" sub="أعلى سكور">
-        {byWins.map(r => <Row key={r.m.id} left={`${r.m.name}  ·  ${r.wins.map(g => 'GW' + g).join('، ')}`} right={'⭐×' + r.wins.length} onPress={() => open(r.m.id)} />)}
-      </Card>
-
-      <Card title="المعدل فالجولة">
-        {byAvg.map(r => <Row key={r.m.id} left={r.m.name} right={avg(r).toFixed(1)} onPress={() => open(r.m.id)} />)}
-      </Card>
-
-      <Card title="خسارة التبديلات" sub="نقاط مخصومة">
-        {byHits.length ? byHits.map(r => <Row key={r.m.id} left={r.m.name} right={'−' + r.hits} color={C.bad} onPress={() => open(r.m.id)} />)
-          : <Text style={[s.small, { padding: 14 }]}>حتى واحد ما خلص -4.</Text>}
-      </Card>
-
-      <Card title="نقاط ضايعة فالبنك">
-        {byBench.map(r => <Row key={r.m.id} left={r.m.name} right={r.bench} onPress={() => open(r.m.id)} />)}
-      </Card>
-    </>
-  );
-}
-
-function GwNav({ list, gw, setGw }) {
-  const [open, setOpen] = useState(false);
-  const i = list.indexOf(gw);
-  const prev = i > 0 ? list[i - 1] : null;
-  const next = i >= 0 && i < list.length - 1 ? list[i + 1] : null;
-  return (
-    <>
-      <View style={s.gwNav}>
-        <TouchableOpacity disabled={!prev} onPress={() => setGw(prev)} style={[s.arrow, !prev && { opacity: 0.3 }]} accessibilityLabel="الجولة السابقة">
-          <Text style={s.arrowT}>‹</Text>
-        </TouchableOpacity>
-        <TouchableOpacity onPress={() => setOpen(true)} style={s.gwBtn}>
-          <Text style={s.gwBtnT}>Gameweek {gw}  ▾</Text>
-        </TouchableOpacity>
-        <TouchableOpacity disabled={!next} onPress={() => setGw(next)} style={[s.arrow, !next && { opacity: 0.3 }]} accessibilityLabel="الجولة الجاية">
-          <Text style={s.arrowT}>›</Text>
-        </TouchableOpacity>
-      </View>
-      <Modal visible={open} transparent animationType="fade" onRequestClose={() => setOpen(false)}>
-        <TouchableOpacity style={s.modalBg} activeOpacity={1} onPress={() => setOpen(false)}>
-          <View style={s.modalBox}>
-            <Text style={[s.h2, { padding: 14, textAlign: 'center' }]}>اختار الجولة</Text>
-            <ScrollView style={{ maxHeight: 380 }}>
-              {[...list].reverse().map(g => (
-                <TouchableOpacity key={g} onPress={() => { setGw(g); setOpen(false); }} style={[s.modalItem, g === gw && { backgroundColor: C.me }]}>
-                  <Text style={[s.txt, { textAlign: 'center' }, g === gw && { color: C.pink, fontWeight: '700' }]}>Gameweek {g}</Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-          </View>
-        </TouchableOpacity>
-      </Modal>
-    </>
-  );
-}
-
-// Tsawer dyal les joueurs 3and Premier League. L-chemin tbeddel bin les saisons, donc kanjarrbo
-// wa7ed mn b3d wa7ed. Ila ma khdam ta wa7ed, kayban l-maillot b7al 9bel.
-const photoUrls = code => [
-  `https://resources.premierleague.com/premierleague25/photos/players/110x140/${code}.png`,
-  `https://resources.premierleague.com/premierleague/photos/players/110x140/p${code}.png`,
-  `https://resources.premierleague.com/premierleague/photos/players/250x250/p${code}.png`,
-];
-
-function PlayerFace({ pl, data, badge }) {
-  const [i, setI] = useState(0);
-  const urls = pl.c ? photoUrls(pl.c) : [];
-  const shirt = (
-    <View style={[s.shirt, pl.t === 1 && { backgroundColor: '#f2c400' }]}>
-      <Text style={[s.shirtT, pl.t === 1 && { color: C.ink }]}>{data.teams[pl.team] || ''}</Text>
-    </View>
-  );
-  return (
-    <View style={s.face}>
-      {i < urls.length ? (
-        <>
-          <Image source={{ uri: urls[i] }} style={s.photo} resizeMode="contain" onError={() => setI(i + 1)} accessibilityLabel={pl.n} />
-          <View style={[s.teamTag, pl.t === 1 && { backgroundColor: '#f2c400' }]}>
-            <Text style={[s.teamTagT, pl.t === 1 && { color: C.ink }]}>{data.teams[pl.team] || ''}</Text>
-          </View>
-        </>
-      ) : shirt}
-      {badge ? <View style={s.capt}><Text style={s.captT}>{badge}</Text></View> : null}
-    </View>
-  );
-}
-
-function Kit({ p, data, bench }) {
-  const pl = data.players[p.element] || { n: '?' };
-  // Banc (bla Bench Boost): kayban l-point dyal joueur wakha ma kaythesbch.
-  const pts = bench && !p.subIn ? p.base : p.pts;
-  const capNow = p.eff >= 2;
-  const badge = capNow ? (p.eff === 3 ? 'TC' : 'C') : p.is_captain ? 'C' : p.is_vice_captain ? 'V' : null;
-  const waiting = !p.done && !p.played;
-  const prov = p.bonus && (p.eff || bench) ? p.bonus : 0;
-  return (
-    <View style={[s.kit, p.subOut && { opacity: 0.45 }]}>
-      {p.subIn ? <Text style={s.subTag}>↑ دخل</Text> : p.subOut ? <Text style={[s.subTag, { backgroundColor: C.bad }]}>↓ خرج</Text> : null}
-      <PlayerFace key={p.element} pl={pl} data={data} badge={badge} />
-      <View style={s.kitName}><Text style={s.kitNameT} numberOfLines={1}>{pl.n}</Text></View>
-      <View style={s.kitPts}>
-        <Text style={s.kitPtsT}>{waiting ? '⏳' : pts}</Text>
-        {prov ? <Text style={s.bonusT}>+{prov * Math.max(1, p.eff || 1)}★</Text> : null}
-      </View>
-    </View>
-  );
-}
-
-function Pitch({ team, data }) {
-  const xi = team.picks.filter(p => p.position <= 11);
-  const bench = team.picks.filter(p => p.position > 11);
-  const line = t => xi.filter(p => (data.players[p.element] || {}).t === t);
-  return (
-    <View>
-      <View style={s.pitch}>
-        {[0, 1, 2, 3, 4, 5].map(i => <View key={i} style={[s.stripe, { top: `${i * 16.67}%`, backgroundColor: i % 2 ? C.grass1 : C.grass2 }]} />)}
-        <View style={s.box} />
-        <View style={s.halfLine} />
-        <View style={s.circle} />
-        {[1, 2, 3, 4].map(t => (
-          <View key={t} style={s.lineRow}>
-            {line(t).map(p => <Kit key={p.element} p={p} data={data} />)}
-          </View>
-        ))}
-      </View>
-      <View style={s.benchRow}>
-        {bench.map(p => <Kit key={p.element} p={p} data={data} bench={team.chip !== 'bboost'} />)}
-      </View>
-    </View>
-  );
-}
-
-function Player({ c, data, id, isMe, onLogout, onBack, staff, onSession, onStaffOut }) {
-  const [staffOpen, setStaffOpen] = useState(false);
-  const r = c.per[id];
-  const gwList = r ? r.list.map(x => x.gw) : [];
-  const [gw, setGw] = useState(c.showGw && gwList.includes(c.showGw) ? c.showGw : gwList[gwList.length - 1]);
-  const [team, setTeam] = useState(null);
-  const [tErr, setTErr] = useState(null);
-  useEffect(() => {
-    if (!gw) return;
-    let alive = true;
-    setTeam(null); setTErr(null);
-    loadPicks(id, gw, data.players).then(t => alive && setTeam(t)).catch(() => alive && setTErr('ما قدرتش نجيب الفريق.'));
-    return () => { alive = false; };
-  }, [id, gw, data.players, data.fetchedAt]);
-  if (!r) return null;
-  const max = Math.max(1, ...r.list.map(x => x.p));
-  const donk = new Set(r.donkeys);
-  const g = r.m.gws[gw] || {};
-  return (
-    <>
-      {onBack ? <TouchableOpacity onPress={onBack}><Text style={[s.txt, { color: C.pitch2, fontWeight: '700' }]}>→ رجوع</Text></TouchableOpacity> : null}
-      <View style={s.hero}>
-        <Text style={s.heroName}>{r.m.team}</Text>
-        <Text style={s.heroSub}>{r.m.name} · ID {r.m.id}</Text>
-        <View style={s.stats}>
-          <Stat n={'#' + r.rank} l="الترتيب" />
-          <Stat n={r.total} l="المجموع" />
-          <Stat n={'🐴' + r.donkeys.length} l="حمار" />
-          <Stat n={r.pen.amount} l="كيخلص DH" />
-        </View>
-      </View>
-
-      <Card>
-        <GwNav list={gwList} gw={gw} setGw={setGw} />
-        <View style={s.gwSum}>
-          <View style={s.gwSumBox}><Text style={s.gwSumN}>{g.p ?? '–'}</Text><Text style={s.small}>النقاط</Text></View>
-          <View style={s.gwSumBox}><Text style={s.gwSumN}>{g.h ? '−' + g.h : 0}</Text><Text style={s.small}>تبديلات</Text></View>
-          <View style={s.gwSumBox}><Text style={s.gwSumN} numberOfLines={1}>{team && team.hist.rank ? fmtShort(team.hist.rank) : '–'}</Text><Text style={s.small}>ترتيب الجولة</Text></View>
-        </View>
-        {g.live ? (
-          <Text style={[s.small, { textAlign: 'center', paddingBottom: 8, color: C.pink }]}>
-            {'🔴 live'}{g.left ? ` · ⏳ باقي ${g.left} لاعبين` : ' · سالاو كاملين'}{g.prov ? ` · ★ +${g.prov} بونيس مؤقت` : ''}
-          </Text>
-        ) : null}
-        {g.c ? <View style={{ alignItems: 'center', paddingBottom: 8 }}><Pill text={CHIPS[g.c]?.label} color={CHIPS[g.c]?.color} /></View> : null}
-        {donk.has(gw) ? <Text style={[s.txt, { textAlign: 'center', color: C.donkey, paddingBottom: 8, fontWeight: '700' }]}>🐴 حمار هاد الجولة</Text> : null}
-        {tErr ? <Text style={{ color: C.bad, padding: 14, textAlign: 'right' }}>{tErr}</Text> :
-          !team ? <ActivityIndicator style={{ padding: 40 }} color={C.pink} /> : <Pitch team={team} data={data} />}
-      </Card>
-
-      <Card title="النقاط جولة بجولة" sub="البني = حمار · الذهبي = نجم">
-        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-          <View style={s.bars}>
-            {r.list.map(x => (
-              <TouchableOpacity key={x.gw} style={s.barCol} onPress={() => setGw(x.gw)}>
-                <Text style={s.barV}>{x.p}</Text>
-                <View style={[s.bar, { height: 4 + 90 * (x.p / max), backgroundColor: donk.has(x.gw) ? C.donkey : r.wins.includes(x.gw) ? C.gold : C.pitch2 }, x.gw === gw && { borderWidth: 2, borderColor: C.pink }]} />
-                <Text style={[s.barL, x.gw === gw && { color: C.pink, fontWeight: '700' }]}>{x.gw}</Text>
-                <Text style={[s.barL, { color: x.c ? CHIPS[x.c]?.color : 'transparent', fontWeight: '700' }]}>{x.c ? CHIPS[x.c]?.short : '·'}</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-        </ScrollView>
-      </Card>
-
-      <Card title="الخاصيات">
-        {Object.keys(CHIPS).filter(k => k !== 'manager' || r.m.chips.some(ch => ch.name === k)).map(k => {
-          const used = r.m.chips.filter(ch => ch.name === k);
-          return <Row key={k} left={CHIPS[k].label} right={used.length ? used.map(u => 'GW' + u.gw).join('، ') : 'مازال'} color={used.length ? CHIPS[k].color : C.muted} />;
-        })}
-        <Row left="خسارة التبديلات" right={'−' + r.hits} />
-        <Row left="نقاط ضايعة فالبنك" right={r.bench} />
-      </Card>
-      {isMe ? (
-        <>
-          <TouchableOpacity style={[s.btn, { backgroundColor: C.pink }]} onPress={onLogout}><Text style={s.btnT}>تسجيل الخروج</Text></TouchableOpacity>
-          {staff ? <Text style={[s.small, { textAlign: 'center', color: C.pitch2 }]}>{staff === 'admin' ? 'متصل كمسؤول' : 'متصل كأمين المال'}</Text> : null}
-        </>
-      ) : null}
-    </>
-  );
-}
-
-/* ---------------- finance (Firebase Realtime Database, REST) ---------------- */
-const fb = {
-  enabled: () => !!(CONFIG.firebase.dbUrl && CONFIG.firebase.apiKey),
-  async read(path) {
-    const r = await fetch(`${CONFIG.firebase.dbUrl}/${path}.json`);
-    if (!r.ok) throw new Error('read ' + r.status);
-    return (await r.json()) || {};
-  },
-  async signIn(email, password) {
-    const r = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${CONFIG.firebase.apiKey}`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password, returnSecureToken: true }),
-    });
-    const j = await r.json();
-    if (!r.ok) throw new Error((j.error && j.error.message) || ('HTTP ' + r.status));
-    return { uid: j.localId, idToken: j.idToken, refreshToken: j.refreshToken, exp: Date.now() + (+j.expiresIn - 60) * 1000 };
-  },
-  async fresh(sess) {
-    if (sess.exp > Date.now()) return sess;
-    const r = await fetch(`https://securetoken.googleapis.com/v1/token?key=${CONFIG.firebase.apiKey}`, {
-      method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: 'grant_type=refresh_token&refresh_token=' + encodeURIComponent(sess.refreshToken),
-    });
-    const j = await r.json();
-    if (!r.ok) throw new Error('session');
-    return { uid: j.user_id, idToken: j.id_token, refreshToken: j.refresh_token, exp: Date.now() + (+j.expires_in - 60) * 1000 };
-  },
-  async write(sess, path, patch) {
-    const r = await fetch(`${CONFIG.firebase.dbUrl}/${path}.json?auth=${sess.idToken}`, {
-      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ...patch, at: Date.now() }),
-    });
-    if (!r.ok) throw new Error(r.status === 401 ? 'ما عندكش الحق تبدل' : 'write ' + r.status);
-  },
-};
-
-function StaffLogin({ onSession }) {
-  const [email, setEmail] = useState('');
-  const [pw, setPw] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState(null);
-  const go = async () => {
-    setErr(null); setBusy(true);
-    try { onSession(await fb.signIn(email.trim(), pw)); }
-    catch (e) { setErr(authMsg(e)); }
-    setBusy(false);
-  };
-  return (
-    <Card title="دخول المسؤولين" sub="Brahim · Najib">
-      <View style={{ padding: 14, gap: 10 }}>
-        <TextInput style={[s.input, { fontSize: 15 }]} value={email} onChangeText={setEmail} placeholder="الإيميل" autoCapitalize="none" keyboardType="email-address" />
-        <TextInput style={[s.input, { fontSize: 15 }]} value={pw} onChangeText={setPw} placeholder="كلمة السر" secureTextEntry />
-        <TouchableOpacity style={s.btn} onPress={go} disabled={busy}><Text style={s.btnT}>{busy ? '…' : 'دخول'}</Text></TouchableOpacity>
-        {err ? <Text style={{ color: C.bad, textAlign: 'right' }}>{err}</Text> : null}
-      </View>
-    </Card>
-  );
-}
-
-const gwLabel = g => g.gws.length === 1 ? 'GW' + g.gws[0] : 'GW' + g.gws.join('-');
-const kindLabel = { streak: '3 متتابعين', triple: '3 مرات', single: 'حمار' };
-
-function Finance({ c, sess, setSess, meId }) {
-  const [pay, setPay] = useState(null);
-  const [outs, setOuts] = useState(null);
-  const [err, setErr] = useState(null);
-  const [busy, setBusy] = useState(null);
-  const [showLogin, setShowLogin] = useState(false);
-  const [openId, setOpenId] = useState(null);
-
-  const load = useCallback(() => {
-    setErr(null);
-    Promise.all([fb.read('payments'), fb.read('payouts')])
-      .then(([p, o]) => { setPay(p); setOuts(o); })
-      .catch(() => setErr('ما قدرتش نجيب الخلاص.'));
-  }, []);
-  useEffect(() => { if (fb.enabled()) load(); }, [load]);
-
-  if (!fb.enabled()) {
-    return <Card title="الخلاص"><Text style={[s.txt, { padding: 14 }]}>هاد الصفحة غادي تخدم ملي تتربط قاعدة البيانات.</Text></Card>;
-  }
-
-  const editing = !!sess && (sess.uid === CONFIG.staff.admin || sess.uid === CONFIG.staff.treasurer);
-
-  const save = async (key, path, patch, apply) => {
-    setBusy(key); setErr(null);
-    try {
-      const x = await fb.fresh(sess);
-      if (x !== sess) setSess(x);
-      await fb.write(x, path, patch);
-      apply();
-    } catch (e) {
-      if (e.message === 'session') { setErr('عاود دخل.'); setSess(null); }
-      else setErr(e.message.startsWith('ما عندك') ? 'هاد الحساب ما عندوش الحق يبدل الخلاص.' : 'ما تسجلش، عاود.');
-    }
-    setBusy(null);
-  };
-
-  // ---- incoming: fee + penalties computed from results ----
-  const rows = c.table.map(r => {
-    const p = (pay || {})[r.m.id] || {};
-    const penMap = p.pen || {};
-    const groups = r.pen.groups.map(g => {
-      const paid = g.gws.reduce((t, gw) => t + (penMap[gw] || 0), 0);
-      return { ...g, paid: Math.min(paid, g.amount), done: paid >= g.amount };
-    });
-    const paid = groups.reduce((t, g) => t + g.paid, 0);
-    return { r, fee: !!p.fee, penMap, groups, owed: r.pen.amount, paid, left: r.pen.amount - paid };
-  });
-  const setGroup = (x, g, done) => {
-    const pen = { ...x.penMap };
-    g.gws.forEach(gw => { delete pen[gw]; });
-    if (done) pen[g.gws[g.gws.length - 1]] = g.amount;
-    const key = x.r.m.id + ':' + g.gws.join('-');
-    save(key, `payments/${x.r.m.id}`, { pen }, () =>
-      setPay(p => ({ ...(p || {}), [x.r.m.id]: { ...((p || {})[x.r.m.id] || {}), pen } })));
-  };
-  const setFee = (x, fee) => save(x.r.m.id + ':fee', `payments/${x.r.m.id}`, { fee }, () =>
-    setPay(p => ({ ...(p || {}), [x.r.m.id]: { ...((p || {})[x.r.m.id] || {}), fee } })));
-
-  // ---- outgoing: prizes and bonuses computed from results ----
-  const name = id => c.per[id] ? c.per[id].m.name : '?';
-  const bonusRec = c.record ? 100 : 0, bonusClean = c.clean.length * 100;
-  const payouts = [
-    ...[0, 1, 2].map(i => c.table[i] && {
-      key: 'prize' + (i + 1), title: ['🥇 الأول', '🥈 الثاني', '🥉 الثالث'][i], to: c.table[i].m.id,
-      amount: Math.round(c.pool * [0.5, 0.3, 0.2][i]), end: true,
-    }),
-    c.record && { key: 'record', title: 'أعلى سكور بلا خاصيات', to: c.record.ids[0], amount: 100, end: true, note: `${c.record.p} pts · GW${c.record.gw}` },
-    ...c.clean.map(r => ({ key: 'clean-' + r.m.id, title: 'ما عمرو جا حمار', to: r.m.id, amount: 100, end: true })),
-    { key: 'cup', title: '🏆 الكأس', toName: CONFIG.cupWinner || 'مازال ما تعرف', amount: c.fund - bonusRec - bonusClean, end: true },
-  ].filter(Boolean);
-  const setOut = (o, paid) => {
-    const patch = paid ? { paid: true, amount: o.amount, to: o.to || 0 } : { paid: false, amount: 0, to: 0 };
-    save('out:' + o.key, `payouts/${o.key}`, patch, () => setOuts(p => ({ ...(p || {}), [o.key]: patch })));
-  };
-
-  const feesIn = rows.filter(x => x.fee).length;
-  const penIn = rows.reduce((t, x) => t + x.paid, 0);
-  const penOwed = rows.reduce((t, x) => t + x.owed, 0);
-  const paidOut = Object.values(outs || {}).reduce((t, o) => t + (o.paid ? o.amount || 0 : 0), 0);
-  const cash = feesIn * CONFIG.fee + penIn - paidOut;
-
-  if (!editing) {
-    const me = rows.find(x => x.r.m.id === meId);
-    if (!me) return null;
-    const mine = payouts.filter(o => o.to === meId);
-    const toPay = (me.fee ? 0 : CONFIG.fee) + Math.max(0, me.left);
-    const toWin = mine.filter(o => !((outs || {})[o.key] || {}).paid).reduce((t, o) => t + o.amount, 0);
-    return (
-      <>
-        <View style={s.hero}>
-          <Text style={s.heroSub}>{me.r.m.name}</Text>
-          <View style={s.stats}>
-            <View style={s.stat}><Text style={[s.statN, { fontSize: 26, color: toPay ? C.pink : C.neon }]}>{toPay} DH</Text><Text style={[s.small, { color: '#d9c7dc' }]}>خاصك تخلص</Text></View>
-            <View style={s.stat}><Text style={[s.statN, { fontSize: 26, color: C.neon }]}>{fmt(toWin)} DH</Text><Text style={[s.small, { color: '#d9c7dc' }]}>غادي تربح</Text></View>
-          </View>
-        </View>
-        {pay === null && !err ? <ActivityIndicator color={C.pink} /> : null}
-        {err ? <View style={s.err}><Text style={{ color: C.bad, textAlign: 'right' }}>{err}</Text></View> : null}
-        <Card title="شنو خاصك تخلص">
-          <View style={{ padding: 12, gap: 8 }}>
-            <View style={s.item}>
-              <Text style={[s.txt, { flex: 1 }]}>الانخراط · {CONFIG.fee} DH</Text>
-              <Pill text={me.fee ? 'تخلص ✓' : 'مازال'} color={me.fee ? C.good : C.bad} />
-            </View>
-            {me.groups.map(g => (
-              <View key={g.gws.join('-')} style={s.item}>
-                <View style={{ flex: 1 }}>
-                  <Text style={s.txt}>🐴 {gwLabel(g)} · <Text style={s.bold}>{g.amount} DH</Text></Text>
-                  <Text style={s.small}>{kindLabel[g.kind]}{g.paid && !g.done ? ` · تخلص ${g.paid}، باقي ${g.amount - g.paid}` : ''}</Text>
-                </View>
-                <Pill text={g.done ? 'تخلص ✓' : 'مازال'} color={g.done ? C.good : C.bad} />
+    <Sections
+      refreshControl={refreshControl}
+      sections={[
+        {
+          title: 'الأرقام القياسية',
+          body: (
+            <>
+              {c.best ? <Row left={`أعلى سكور: ${name(c.best.id)} (GW${c.best.gw}${c.best.c ? ' · ' + CHIPS[c.best.c]?.short : ''})`} right={c.best.p} onPress={() => open(c.best.id)} /> : null}
+              {c.record ? <Row left={`أعلى سكور بلا خاصيات: ${c.record.ids.map(name).join('، ')} (GW${c.record.gw})`} right={c.record.p} /> : null}
+              {c.worst ? <Row left={`أقل سكور: ${name(c.worst.id)} (GW${c.worst.gw})`} right={c.worst.p} onPress={() => open(c.worst.id)} /> : null}
+            </>
+          ),
+        },
+        {
+          title: 'الخاصيات', sub: 'شكون لعب شنو',
+          body: chipRows.map(({ k, users }) => (
+            <View key={k} style={[s.tr, { alignItems: 'flex-start' }]}>
+              <View style={{ width: 120 }}><Pill text={CHIPS[k].label} color={CHIPS[k].color} /></View>
+              <View style={{ flex: 1, gap: 2 }}>
+                {users.length ? users.sort((a, b) => a.gw - b.gw).map(u => (
+                  <TouchableOpacity key={u.id + '-' + u.gw} onPress={() => open(u.id)}>
+                    <Text style={s.txt}>{name(u.id)} <Text style={s.muted}>· GW{u.gw}</Text></Text>
+                  </TouchableOpacity>
+                )) : <Text style={s.small}>حتى واحد مازال</Text>}
               </View>
-            ))}
-            {!me.groups.length ? <Text style={s.small}>حتى عقوبة. ما عمرو جيتي حمار 👏</Text> : null}
-          </View>
-        </Card>
-        <Card title="شنو غادي تربح" sub="إلا وقف الموسم دابا">
-          {mine.length ? mine.map(o => {
-            const st = (outs || {})[o.key] || {};
-            return (
-              <View key={o.key} style={s.tr}>
-                <View style={{ flex: 1 }}>
-                  <Text style={[s.txt, s.bold]}>{o.title} · {fmt(o.amount)} DH</Text>
-                  {o.note ? <Text style={s.small}>{o.note}</Text> : null}
-                </View>
-                <Pill text={st.paid ? 'توصلتي ✓' : 'آخر الموسم'} color={st.paid ? C.good : C.silver} />
-              </View>
-            );
-          }) : <Text style={[s.small, { padding: 14 }]}>حتى جائزة دابا. كمل وزيد 💪</Text>}
-        </Card>
-        <Text style={s.note}>كلشي محسوب من النتائج ديال FPL. أمين المال هو اللي كيسجل الخلاص.</Text>
-      </>
-    );
-  }
-
-  const Btn = ({ k, label, onPress, solid }) => (
-    <TouchableOpacity style={[s.miniBtn, solid && { backgroundColor: C.pitch }]} disabled={!!busy} onPress={onPress}>
-      {busy === k ? <ActivityIndicator size="small" color={solid ? '#fff' : C.pink} /> : <Text style={[s.miniBtnT, solid && { color: '#fff' }]}>{label}</Text>}
-    </TouchableOpacity>
-  );
-
-  return (
-    <>
-      <View style={s.hero}>
-        <Text style={s.heroSub}>الصندوق فاليد</Text>
-        <Text style={[s.heroName, { fontSize: 32, color: C.neon }]}>{fmt(cash)} DH</Text>
-        <View style={s.stats}>
-          <Stat n={`${feesIn}/${rows.length}`} l="الانخراط" />
-          <Stat n={`${fmt(penIn)}/${fmt(penOwed)}`} l="العقوبات" />
-          <Stat n={fmt(paidOut)} l="تعطات" />
-        </View>
-      </View>
-
-      {pay === null && !err ? <ActivityIndicator color={C.pink} /> : null}
-      {err ? <View style={s.err}><Text style={{ color: C.bad, textAlign: 'right' }}>{err}</Text></View> : null}
-
-      <Card title="المداخيل" sub={editing ? 'وضع التعديل' : 'دغط على لاعب'}>
-        {rows.map(x => {
-          const open = openId === x.r.m.id;
-          return (
-            <View key={x.r.m.id} style={{ borderBottomWidth: 1, borderColor: C.line }}>
-              <TouchableOpacity style={[s.tr, { borderBottomWidth: 0 }]} onPress={() => setOpenId(open ? null : x.r.m.id)}>
-                <View style={{ flex: 1, gap: 4 }}>
-                  <Text style={[s.txt, s.bold]} numberOfLines={1}>{x.r.m.name}</Text>
-                  <View style={{ flexDirection: 'row-reverse', gap: 6, flexWrap: 'wrap' }}>
-                    <Pill text={x.fee ? 'الانخراط ✓' : 'الانخراط ✗'} color={x.fee ? C.good : C.bad} />
-                    {x.owed ? <Pill text={x.left > 0 ? `باقي ${x.left} DH` : 'العقوبات ✓'} color={x.left > 0 ? C.donkey : C.good} /> : null}
-                  </View>
-                </View>
-                <View style={{ alignItems: 'flex-start' }}>
-                  <Text style={[s.num, s.bold]}>{x.paid}/{x.owed}</Text>
-                  <Text style={s.small}>{open ? '▴' : '▾'}</Text>
-                </View>
-              </TouchableOpacity>
-              {open ? (
-                <View style={{ paddingHorizontal: 12, paddingBottom: 12, gap: 8 }}>
-                  <View style={s.item}>
-                    <Text style={[s.txt, { flex: 1 }]}>الانخراط · {CONFIG.fee} DH</Text>
-                    {editing ? <Btn k={x.r.m.id + ':fee'} label={x.fee ? 'لغي' : 'خلص'} solid={!x.fee} onPress={() => setFee(x, !x.fee)} />
-                      : <Text style={{ color: x.fee ? C.good : C.bad, fontWeight: '700' }}>{x.fee ? '✓' : '✗'}</Text>}
-                  </View>
-                  {x.groups.length ? x.groups.map(g => {
-                    const k = x.r.m.id + ':' + g.gws.join('-');
-                    return (
-                      <View key={k} style={s.item}>
-                        <View style={{ flex: 1 }}>
-                          <Text style={s.txt}>🐴 {gwLabel(g)} · <Text style={s.bold}>{g.amount} DH</Text></Text>
-                          <Text style={s.small}>{kindLabel[g.kind]}{g.paid && !g.done ? ` · تخلص ${g.paid}، باقي ${g.amount - g.paid}` : ''}</Text>
-                        </View>
-                        {editing ? <Btn k={k} label={g.done ? 'لغي' : g.paid ? `كمل ${g.amount - g.paid}` : 'خلص'} solid={!g.done} onPress={() => setGroup(x, g, !g.done)} />
-                          : <Text style={{ color: g.done ? C.good : C.bad, fontWeight: '700' }}>{g.done ? '✓' : '✗'}</Text>}
-                      </View>
-                    );
-                  }) : <Text style={s.small}>حتى عقوبة. ما عمرو جا حمار 👏</Text>}
-                </View>
-              ) : null}
             </View>
-          );
-        })}
-      </Card>
-
-      <Card title="المدفوعات" sub="الجوائز والبريمات">
-        {payouts.map(o => {
-          const st = (outs || {})[o.key] || {};
-          return (
-            <View key={o.key} style={s.tr}>
-              <View style={{ flex: 1 }}>
-                <Text style={[s.txt, s.bold]}>{o.title} · {fmt(o.amount)} DH</Text>
-                <Text style={s.small}>{o.to ? name(o.to) : o.toName}{o.note ? ' · ' + o.note : ''}{o.end && !st.paid ? ' · آخر الموسم' : ''}</Text>
-              </View>
-              {editing ? <Btn k={'out:' + o.key} label={st.paid ? 'لغي' : 'تعطات'} solid={!st.paid} onPress={() => setOut(o, !st.paid)} />
-                : <Pill text={st.paid ? 'تعطات ✓' : 'مازال'} color={st.paid ? C.good : C.silver} />}
-            </View>
-          );
-        })}
-      </Card>
-      <Text style={s.note}>كلشي محسوب من النتائج: إلا تبدل الترتيب ولا جات جولة جديدة، المبالغ كيتحسبو بوحدهم. إلا كان واحد خلص 10 ومن بعد كملو 3 مرات، كيبان ليه غير الباقي.</Text>
-
-      <TouchableOpacity onPress={load}><Text style={[s.small, { textAlign: 'center' }]}>تحديث الخلاص ↻</Text></TouchableOpacity>
-    </>
+          )),
+        },
+        {
+          title: 'نجم الجولة', sub: 'أعلى سكور',
+          body: byWins.map(r => <Row key={r.m.id} left={`${r.m.name}  ·  ${r.wins.map(g => 'GW' + g).join('، ')}`} right={'⭐×' + r.wins.length} onPress={() => open(r.m.id)} />),
+        },
+        {
+          title: 'المعدل فالجولة',
+          body: byAvg.map(r => <Row key={r.m.id} left={r.m.name} right={avg(r).toFixed(1)} onPress={() => open(r.m.id)} />),
+        },
+        {
+          title: 'خسارة التبديلات', sub: 'نقاط مخصومة',
+          body: byHits.length ? byHits.map(r => <Row key={r.m.id} left={r.m.name} right={'−' + r.hits} color={C.bad} onPress={() => open(r.m.id)} />)
+            : <Text style={[s.small, { padding: 14 }]}>حتى واحد ما خلص -4.</Text>,
+        },
+        {
+          title: 'نقاط ضايعة فالبنك',
+          body: byBench.map(r => <Row key={r.m.id} left={r.m.name} right={r.bench} onPress={() => open(r.m.id)} />),
+        },
+      ]}
+    />
   );
 }
-
-function Fund({ c }) {
+function Fund({ c, refreshControl }) {
   const name = id => c.per[id].m.name;
   const bonusRec = c.record ? 100 : 0;
   const bonusClean = c.clean.length * 100;
   const cup = c.fund - bonusRec - bonusClean;
   return (
-    <>
-      <Card title="الانخراطات" sub={`${c.table.length} × ${CONFIG.fee} DH`}>
-        <Row left="🥇 الأول (50%)" right={fmt(c.pool * 0.5)} />
-        <Row left="🥈 الثاني (30%)" right={fmt(c.pool * 0.3)} />
-        <Row left="🥉 الثالث (20%)" right={fmt(c.pool * 0.2)} />
-        <Row left="المجموع" right={fmt(c.pool)} strong />
-      </Card>
-      <Card title="صندوق الحمير" sub={c.gws.length ? `حتى لـ GW${c.gws[c.gws.length - 1]}` : ''}>
-        <Row left="العقوبات المجموعة" right={fmt(c.fund)} />
-        <Row left={'أعلى سكور بلا خاصيات\n' + (c.record ? `${c.record.ids.map(name).join('، ')} · ${c.record.p} pts (GW${c.record.gw})` : '—')} right={'−' + bonusRec} />
-        <Row left={'ما عمرو جا حمار\n' + (c.clean.length ? c.clean.map(r => r.m.name).join('، ') : 'حتى واحد')} right={'−' + fmt(bonusClean)} />
-        <Row left={'🏆 الباقي للكأس' + (CONFIG.cupWinner ? ' · ' + CONFIG.cupWinner : '')} right={fmt(cup)} strong color={cup < 0 ? C.bad : C.good} />
-      </Card>
-      <Text style={s.note}>البريمات كتعطى فآخر الموسم. هاد الحساب كيبين شكون غادي يربح إلا وقف الموسم دابا.</Text>
-    </>
+    <Sections
+      refreshControl={refreshControl}
+      sections={[
+        {
+          title: 'الانخراطات', sub: `${c.table.length} × ${CONFIG.fee} DH`,
+          body: (
+            <>
+              <Row left="🥇 الأول (50%)" right={fmt(c.pool * 0.5)} />
+              <Row left="🥈 الثاني (30%)" right={fmt(c.pool * 0.3)} />
+              <Row left="🥉 الثالث (20%)" right={fmt(c.pool * 0.2)} />
+              <Row left="المجموع" right={fmt(c.pool)} strong />
+            </>
+          ),
+        },
+        {
+          title: 'صندوق الحمير', sub: c.gws.length ? `حتى لـ GW${c.gws[c.gws.length - 1]}` : '',
+          body: (
+            <>
+              <Row left="العقوبات المجموعة" right={fmt(c.fund)} />
+              <Row left={'أعلى سكور بلا خاصيات\n' + (c.record ? `${c.record.ids.map(name).join('، ')} · ${c.record.p} pts (GW${c.record.gw})` : '—')} right={'−' + bonusRec} />
+              <Row left={'ما عمرو جا حمار\n' + (c.clean.length ? c.clean.map(r => r.m.name).join('، ') : 'حتى واحد')} right={'−' + fmt(bonusClean)} />
+              <Row left={'🏆 الباقي للكأس' + (CONFIG.cupWinner ? ' · ' + CONFIG.cupWinner : '')} right={fmt(cup)} strong color={cup < 0 ? C.bad : C.good} />
+            </>
+          ),
+        },
+      ]}
+      footer={<Text style={s.note}>البريمات كتعطى فآخر الموسم. هاد الحساب كيبين شكون غادي يربح إلا وقف الموسم دابا.</Text>}
+    />
   );
 }
 
@@ -1127,6 +714,7 @@ export default function App() {
   const tabs = [['table', 'الترتيب', '🏆'], ['hmar', 'الحمار', '🐴'], ['stats', 'إحصائيات', '📊'], ['me', 'فرقتي', '⚽'], ['fund', 'الصندوق', '💰'], ['pay', isStaff ? 'الخلاص' : 'حسابي', '💳'], ['rules', 'القانون', '📜']];
   if (isAdmin) tabs.push(['admin', 'الإدارة', '⚙️']);
   const me = c && meId ? c.per[meId] : null;
+  const pullToRefresh = <RefreshControl refreshing={loading} onRefresh={() => refresh()} />;
   const pageTitle = viewId ? 'فريق لاعب' : (tabs.find(x => x[0] === tab) || [])[1] || '';
 
   if (!ready) return <View style={{ flex: 1, backgroundColor: C.pitch }} />;
@@ -1186,11 +774,14 @@ export default function App() {
               </TouchableOpacity>
             </TouchableOpacity>
           </Modal>
-          {tab === 'table' && !viewId ? (
-            // Classement: l-entête dyal l-jadwal tabet, ghir les lignes dyal les joueurs kayscrolliw.
+          {!viewId && ['table', 'hmar', 'stats', 'fund'].includes(tab) ? (
+            // Had les pages 3ndhom scroll dyalhom: l-entêtes dyal les jadawel kayb9aw tabtin.
             <View style={{ flex: 1, backgroundColor: C.bg }}>
               {error ? <View style={[s.err, { margin: 14, marginBottom: 0 }]}><Text style={{ color: C.bad, textAlign: 'right' }}>{error}</Text></View> : null}
-              <Classement c={c} meId={meId} open={open} refreshControl={<RefreshControl refreshing={loading} onRefresh={() => refresh()} />} />
+              {tab === 'table' ? <Classement c={c} meId={meId} open={open} refreshControl={pullToRefresh} /> :
+               tab === 'hmar' ? <Hmar c={c} open={open} refreshControl={pullToRefresh} /> :
+               tab === 'stats' ? <Stats c={c} open={open} refreshControl={pullToRefresh} /> :
+               <Fund c={c} refreshControl={pullToRefresh} />}
             </View>
           ) : (
           <ScrollView
@@ -1200,10 +791,7 @@ export default function App() {
           >
             {error ? <View style={s.err}><Text style={{ color: C.bad, textAlign: 'right' }}>{error}</Text></View> : null}
             {viewId ? <Player key={viewId} c={c} data={data} id={viewId} onBack={() => setViewId(null)} /> :
-             tab === 'hmar' ? <Hmar c={c} open={open} /> :
-             tab === 'stats' ? <Stats c={c} open={open} /> :
              tab === 'me' ? <Player key={meId} c={c} data={data} id={meId} isMe onLogout={logout} staff={sess ? (isAdmin ? 'admin' : sess.uid === CONFIG.staff.treasurer ? 'treasurer' : 'other') : null} onSession={setSess} onStaffOut={() => (CONFIG.protectedIds[meId] ? logout() : setSess(null))} /> :
-             tab === 'fund' ? <Fund c={c} /> :
              tab === 'pay' ? <Finance c={c} sess={sess} setSess={setSess} meId={meId} /> :
              tab === 'admin' && isAdmin ? <Admin c={c} data={data} /> :
              <Rules />}
@@ -1236,6 +824,9 @@ const s = StyleSheet.create({
   drawerIcon: { fontSize: 18, width: 26, textAlign: 'center', color: '#fff' },
   drawerT: { color: '#fff', fontSize: 16, fontWeight: '700', textAlign: 'right' },
   fixedPage: { flex: 1, padding: 14, gap: 14 },
+  secHead: { backgroundColor: C.card, borderTopLeftRadius: 12, borderTopRightRadius: 12, overflow: 'hidden', borderBottomWidth: 1, borderColor: C.line },
+  secBody: { backgroundColor: C.card, borderBottomLeftRadius: 12, borderBottomRightRadius: 12, overflow: 'hidden', marginBottom: 14 },
+  secAlone: { borderTopLeftRadius: 12, borderTopRightRadius: 12 },
   fixedCard: { flex: 1 },
   card: { backgroundColor: C.card, borderRadius: 12, overflow: 'hidden', shadowColor: '#37003c', shadowOpacity: 0.08, shadowRadius: 8, shadowOffset: { width: 0, height: 2 }, elevation: 2 },
   cardH: { flexDirection: 'row-reverse', justifyContent: 'space-between', alignItems: 'baseline', padding: 12, borderBottomWidth: 1, borderColor: C.line },
