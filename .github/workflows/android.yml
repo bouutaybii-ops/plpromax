@@ -1,9 +1,7 @@
 name: Android APK
 
+# Daba kankhdmo 3la l-web: l-APK katbna ghir mli nlanciwha b l-yedd (Actions → Android APK → Run workflow).
 on:
-  push:
-    branches: [main, 'claude/**']
-    paths-ignore: ['**.md']
   workflow_dispatch:
 
 permissions:
