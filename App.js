@@ -8,6 +8,7 @@ import {
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { fixturesByTeam, liveStats, liveTeam, provisionalBonus } from './live';
+import { donkeyDeadline, formatMoroccoDate, splitCountdown } from './donkey';
 
 /* ============ CONFIG DYAL LA LIGUE (ghir l'admin kaybeddelha) ============ */
 const CONFIG = {
@@ -427,6 +428,43 @@ function Classement({ c, meId, open, refreshControl }) {
   );
 }
 
+// Kronometre: ch7al ba9i l 7mar l-jawla. L-mouda dyalo katsali m3a 00:00 dyal l-lil li mn b3d
+// akhir match f l-jawla li jaya (b twa9it l-Maghrib).
+function DonkeyTimer({ nextGw }) {
+  const [deadline, setDeadline] = useState(undefined);
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    let alive = true;
+    getJson(`/fixtures/?event=${nextGw}`).then(f => alive && setDeadline(donkeyDeadline(f))).catch(() => alive && setDeadline(null));
+    return () => { alive = false; };
+  }, [nextGw]);
+  const over = deadline != null && now >= deadline;
+  useEffect(() => {
+    if (deadline == null || over) return;
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, [deadline, over]);
+  if (deadline === undefined) return <View style={s.timer}><ActivityIndicator color="#fff" /></View>;
+  if (deadline === null) return null;
+  if (over) return <View style={s.timer}><Text style={s.timerDone}>✅ سالات المدة ديال الحمار</Text></View>;
+  const { d, h, m, s: sec } = splitCountdown(deadline - now);
+  const cells = [[d, 'يوم'], [h, 'ساعة'], [m, 'دقيقة'], [sec, 'ثانية']];
+  return (
+    <View style={s.timer}>
+      <Text style={s.timerTitle}>⏱️ باقي ليه فالحمار</Text>
+      <View style={s.timerRow}>
+        {cells.map(([n, l]) => (
+          <View key={l} style={s.timerCell}>
+            <Text style={s.timerN}>{String(n).padStart(2, '0')}</Text>
+            <Text style={s.timerL}>{l}</Text>
+          </View>
+        ))}
+      </View>
+      <Text style={s.timerEnd}>كيسالي {formatMoroccoDate(deadline)} · مع نهاية GW{nextGw}</Text>
+    </View>
+  );
+}
+
 function Hmar({ c, open, refreshControl }) {
   const name = id => c.per[id].m.name;
   const cur = c.byGw[c.byGw.length - 1];
@@ -453,6 +491,7 @@ function Hmar({ c, open, refreshControl }) {
           </View>
         </View>
       ) : <Card><Text style={[s.txt, { padding: 16 }]}>حتى جولة ما سالات من بداية الدوري.</Text></Card>}
+      {cur && cur.gw < 38 ? <DonkeyTimer nextGw={cur.gw + 1} /> : null}
     </View>
   );
   return (
@@ -1327,6 +1366,14 @@ const s = StyleSheet.create({
   pillT: { fontSize: 11, fontWeight: '700' },
   hmar: { flexDirection: 'row-reverse', gap: 14, alignItems: 'center', backgroundColor: C.donkeyBg, borderWidth: 1, borderColor: C.donkey, borderRadius: 12, padding: 16 },
   hmarBig: { fontSize: 44 },
+  timer: { backgroundColor: C.donkey, borderRadius: 12, padding: 14, gap: 10, alignItems: 'center' },
+  timerTitle: { color: '#fff', fontSize: 14, fontWeight: '800' },
+  timerRow: { flexDirection: 'row-reverse', gap: 8, alignSelf: 'stretch' },
+  timerCell: { flex: 1, backgroundColor: 'rgba(255,255,255,0.14)', borderRadius: 10, paddingVertical: 8, alignItems: 'center' },
+  timerN: { color: '#fff', fontSize: 26, fontWeight: '900', fontVariant: ['tabular-nums'] },
+  timerL: { color: '#f6ece1', fontSize: 11 },
+  timerEnd: { color: '#f6ece1', fontSize: 12, textAlign: 'center' },
+  timerDone: { color: '#fff', fontSize: 15, fontWeight: '800' },
   hmarName: { fontSize: 22, fontWeight: '800', color: C.donkey, textAlign: 'right' },
   grid: { flexDirection: 'row-reverse', flexWrap: 'wrap', gap: 8, padding: 12 },
   gw: { width: '48%', borderWidth: 1, borderColor: C.line, borderRadius: 8, padding: 8 },
