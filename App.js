@@ -1680,6 +1680,8 @@ export default function App() {
         <Login data={data} onLogin={login} loading={loading} error={error} />
       ) : (
         <>
+          {/* L-header (smiya + l-ar9am dyalek) ghir f "فرقتي"; l-pages l-khrin bla header. */}
+          {tab === 'me' && !viewId ? (
           <View style={s.header}>
             <View style={s.topBar}>
               <TouchableOpacity onPress={() => { setTab('me'); setViewId(null); }} style={{ flex: 1 }}>
@@ -1687,7 +1689,7 @@ export default function App() {
                 <Text style={s.eyebrow} numberOfLines={1}>{me ? me.m.team : ''} · {pageTitle}</Text>
               </TouchableOpacity>
             </View>
-            {me && tab === 'me' && !viewId ? (
+            {me ? (
               <View style={s.kpis}>
                 <View style={s.kpi}><Text style={s.kpiN}>#{me.rank}</Text><Text style={s.kpiL}>الترتيب</Text></View>
                 <View style={s.kpi}>
@@ -1699,6 +1701,7 @@ export default function App() {
               </View>
             ) : null}
           </View>
+          ) : null}
           <Modal visible={menu} transparent animationType="slide" onRequestClose={() => setMenu(false)}>
             <TouchableOpacity activeOpacity={1} style={s.drawerShade} onPress={() => setMenu(false)}>
               <TouchableOpacity activeOpacity={1} style={s.drawer} onPress={() => {}}>
