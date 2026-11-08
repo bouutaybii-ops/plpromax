@@ -1,6 +1,6 @@
 // PL PRO MAX 2 — Ligue FPL entre amis (حمار الجولة)
 // Expo / React Native, fichier unique. Kolchi kayji mn l'API officielle dyal FPL.
-import React, { useEffect, useMemo, useState, useCallback } from 'react';
+import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, TextInput, RefreshControl, Image,
   ActivityIndicator, StyleSheet, StatusBar, Platform, Modal,
@@ -383,56 +383,12 @@ function Classement({ c, data, meId, open, refreshControl }) {
   );
 
   if (mode === 'gw') {
-    const live = gw === c.liveGw;
-    const rows = c.table.map(r => ({ r, g: r.m.gws[gw] })).filter(x => x.g).sort((a, b) => b.g.p - a.g.p);
-    const max = rows.length ? rows[0].g.p : null;
-    const finishedD = c.byGw.find(b => b.gw === gw);
-    const donkeyId = finishedD ? finishedD.ids[0] : (live && c.liveDonkey ? c.liveDonkey.ids[0] : null);
-    // Mjmou3 ch-chhar (phases dyal FPL) 7tta l-jawla l-mkhtara.
-    const phase = (data.phases || []).find(ph => gw >= ph.from && gw <= ph.to);
-    const monthPts = m => (phase ? Object.entries(m.gws).filter(([g]) => +g >= phase.from && +g <= gw).reduce((a, [, x]) => a + x.p, 0) : null);
-    const pname = el => (data.players[el] || {}).n || '';
     return (
       <View style={s.fixedPage}>
         {Toggle}
         <View style={[s.card, s.fixedCard]}>
           <GwNav list={allGws} gw={gw} setGw={setGw} />
-          {live ? <Text style={[s.small, { textAlign: 'center', paddingTop: 8, color: C.pink }]}>الجولة مازال كتلعب · النقاط live</Text> : null}
-          <View style={[s.tr, s.thRow]}>
-            <Text style={[s.th, { width: 30 }]}>#</Text>
-            <Text style={[s.th, { flex: 1 }]}>اللاعب</Text>
-            {phase ? <Text style={[s.th, s.colN]}>الشهر</Text> : null}
-            <Text style={[s.th, s.colN]}>الجولة</Text>
-          </View>
-          <ScrollView style={{ flex: 1 }} refreshControl={refreshControl}>
-          {rows.map((x, i) => (
-            <TouchableOpacity key={x.r.m.id} onPress={() => open(x.r.m.id)} style={[s.tr, x.r.m.id === meId && { backgroundColor: C.me }]}>
-              <View style={[s.rk, x.g.p === max && { backgroundColor: C.gold }, x.r.m.id === donkeyId && { backgroundColor: C.donkey }]}>
-                <Text style={[s.rkT, (x.g.p === max || x.r.m.id === donkeyId) && { color: '#fff' }]}>{i + 1}</Text>
-              </View>
-              <View style={{ flex: 1, paddingHorizontal: 8 }}>
-                <Text style={[s.txt, s.bold]} numberOfLines={1}>{x.r.m.name}{x.g.p === max ? '  ⭐' : ''}{x.r.m.id === donkeyId ? (live ? '  ⏳🐴' : '  🐴') : ''}</Text>
-                <View style={{ flexDirection: 'row-reverse', gap: 6, alignItems: 'center', flexWrap: 'wrap', marginTop: 2 }}>
-                  {x.g.cap ? (
-                    <View style={s.capTag}>
-                      <Text style={s.capTagC}>{x.g.capVice ? 'V' : 'C'}</Text>
-                      <Text style={s.capTagT} numberOfLines={1}>{pname(x.g.cap)}</Text>
-                    </View>
-                  ) : <Text style={s.small} numberOfLines={1}>{x.r.m.team}</Text>}
-                  {x.g.c ? <Pill text={CHIPS[x.g.c]?.short || x.g.c} color={CHIPS[x.g.c]?.color} /> : null}
-                  {x.g.live && x.g.inPlay ? <View style={[s.liveTag, { backgroundColor: '#e7fff3', borderColor: '#9be8c2' }]}><Text style={[s.liveTagT, { color: '#0a7a45' }]}>▶ {x.g.inPlay} كيلعبو</Text></View> : null}
-                  {x.g.live && x.g.toStart ? <View style={s.liveTag}><Text style={s.liveTagT}>⏳ {x.g.toStart} مازال</Text></View> : null}
-                  {x.g.live && x.g.prov ? <Text style={[s.small, { color: '#c99a00', fontWeight: '700' }]}>★+{x.g.prov}</Text> : null}
-                </View>
-              </View>
-              {phase ? <Text style={[s.num, s.colN, { color: C.muted }]}>{monthPts(x.r.m)}</Text> : null}
-              <View style={[s.colN, { alignItems: 'center' }]}>
-                <Text style={[s.num, s.bold]}>{x.g.p}</Text>
-                {x.g.h ? <Text style={{ fontSize: 10, color: C.bad, fontWeight: '700' }}>−{x.g.h}</Text> : null}
-              </View>
-            </TouchableOpacity>
-          ))}
-          </ScrollView>
+          <GwGrid key={gw} c={c} data={data} gw={gw} meId={meId} open={open} refreshControl={refreshControl} />
         </View>
       </View>
     );
@@ -468,6 +424,145 @@ function Classement({ c, data, meId, open, refreshControl }) {
         ))}
         </ScrollView>
       </View>
+    </View>
+  );
+}
+
+// Jadwal dyal l-jawla b7al AG Grid: kliki 3la smiyat l-3amoud bach trattab (▼/▲).
+// L-3amoud dyal smiya tabet 3la l-imin, l-b9iya kayt-scrollaw l-jnab.
+const GRID_ROW = 46;
+function GwGrid({ c, data, gw, meId, open, refreshControl }) {
+  const live = gw === c.liveGw;
+  const phase = (data.phases || []).find(ph => gw >= ph.from && gw <= ph.to);
+  const lp = data.leaguePicks && data.leaguePicks.gw === gw ? data.leaguePicks.by || {} : {};
+  const pname = el => (data.players[el] || {}).n || '';
+  const finishedD = c.byGw.find(b => b.gw === gw);
+  const donkeyId = finishedD ? finishedD.ids[0] : (live && c.liveDonkey ? c.liveDonkey.ids[0] : null);
+
+  const rows = c.table.map(r => {
+    const g = r.m.gws[gw];
+    if (!g) return null;
+    const sum = (from, to) => Object.entries(r.m.gws).filter(([k]) => +k >= from && +k <= to).reduce((a, [, x]) => a + (x.p || 0), 0);
+    const pk = (lp[r.m.id] || {}).picks || [];
+    const capEl = g.cap || (pk.find(x => x.is_captain) || {}).element || null;
+    return {
+      id: r.m.id, name: r.m.name, team: r.m.team, g,
+      pts: g.p, total: sum(1, gw), month: phase ? sum(phase.from, gw) : null,
+      inPlay: g.inPlay || 0, toStart: g.toStart || 0, prov: g.prov || 0,
+      cap: capEl ? pname(capEl) : '', capVice: !!g.capVice, chip: g.c || '',
+      h: g.h || 0, tr: g.tr || 0, bench: g.c === 'bboost' ? 0 : g.bench || 0, or: g.or || null,
+    };
+  }).filter(Boolean);
+  const max = rows.length ? Math.max(...rows.map(x => x.pts)) : null;
+
+  const cols = [
+    { k: 'pts', t: 'الجولة', w: 54, bold: true, sub: x => (x.h ? `−${x.h}` : null) },
+    { k: 'total', t: 'المجموع', w: 60 },
+    phase && { k: 'month', t: 'الشهر', w: 54 },
+    live && { k: 'inPlay', t: '▶ كيلعبو', w: 62, color: '#0a7a45', zero: '·' },
+    live && { k: 'toStart', t: '⏳ مازال', w: 58, color: '#9a5b00', zero: '·' },
+    live && { k: 'prov', t: '★ بونيس', w: 58, color: '#c99a00', fmt: v => '+' + v, zero: '·' },
+    { k: 'cap', t: 'الكابتن', w: 98, str: true },
+    { k: 'chip', t: 'Chip', w: 52, str: true },
+    { k: 'h', t: 'Hits', w: 48, color: C.bad, fmt: v => '−' + v, zero: '·' },
+    { k: 'tr', t: 'تبديلات', w: 58, zero: '·' },
+    { k: 'bench', t: 'الدكة', w: 50, zero: '·' },
+    { k: 'or', t: 'الترتيب العالمي', w: 92, asc: true, fmt: fmtShort },
+  ].filter(Boolean);
+
+  const [sort, setSort] = useState({ k: 'pts', dir: -1 });
+  const col = cols.find(x => x.k === sort.k) || cols[0];
+  const val = x => x[col.k];
+  const cmp = (a, b) => {
+    const va = val(a), vb = val(b);
+    if (col.str) return sort.dir * String(va || '￿').localeCompare(String(vb || '￿'));
+    if (va == null && vb == null) return 0;
+    if (va == null) return 1;
+    if (vb == null) return -1;
+    return sort.dir * (va - vb);
+  };
+  const sorted = [...rows].sort((a, b) => cmp(a, b) || b.pts - a.pts || b.total - a.total);
+  // Tartib "compétition" 3la l-3amoud l-mkhtar (l-mtsawyin kayakhdo nafs r-ra9m).
+  const pos = sorted.map((x, i) => (i && !cmp(sorted[i - 1], x) ? null : i + 1));
+  for (let i = 1; i < pos.length; i++) if (pos[i] == null) pos[i] = pos[i - 1];
+  const press = k => setSort(st => (st.k === k ? { k, dir: -st.dir } : { k, dir: cols.find(x => x.k === k).asc || cols.find(x => x.k === k).str ? 1 : -1 }));
+
+  const head = useRef(null);
+  const body = useRef(null);
+  const width = cols.reduce((a, x) => a + x.w, 0);
+  const toEnd = () => { head.current && head.current.scrollToEnd({ animated: false }); body.current && body.current.scrollToEnd({ animated: false }); };
+
+  const cell = (x, cl) => {
+    const v = x[cl.k];
+    if (cl.k === 'cap') {
+      return v ? (
+        <View style={[s.capTag, { maxWidth: cl.w - 8 }]}>
+          <Text style={[s.capTagC, x.capVice && { backgroundColor: C.muted }]}>{x.capVice ? 'V' : 'C'}</Text>
+          <Text style={s.capTagT} numberOfLines={1}>{v}</Text>
+        </View>
+      ) : <Text style={s.gridDim}>–</Text>;
+    }
+    if (cl.k === 'chip') return v ? <Pill text={CHIPS[v]?.short || v} color={CHIPS[v]?.color} /> : <Text style={s.gridDim}>–</Text>;
+    if (v == null) return <Text style={s.gridDim}>–</Text>;
+    if (!v && cl.zero) return <Text style={s.gridDim}>{cl.zero}</Text>;
+    const sub = cl.sub && cl.sub(x);
+    return (
+      <>
+        <Text style={[s.gridNum, cl.bold && { fontWeight: '900', fontSize: 15 }, cl.color && { color: cl.color }]}>{cl.fmt ? cl.fmt(v) : v}</Text>
+        {sub ? <Text style={{ fontSize: 10, color: C.bad, fontWeight: '700' }}>{sub}</Text> : null}
+      </>
+    );
+  };
+
+  const hcell = cl => {
+    const on = sort.k === cl.k;
+    return (
+      <TouchableOpacity key={cl.k} onPress={() => press(cl.k)} style={[s.gridH, { width: cl.w }, on && s.gridHOn]}>
+        <Text style={[s.gridHT, on && { color: C.pitch }]} numberOfLines={2}>{cl.t}</Text>
+        <Text style={[s.gridArrow, on && { color: C.pink }]}>{on ? (sort.dir < 0 ? '▼' : '▲') : '⇅'}</Text>
+      </TouchableOpacity>
+    );
+  };
+
+  return (
+    <View style={{ flex: 1 }}>
+      {live ? <Text style={[s.small, { textAlign: 'center', paddingTop: 8, color: C.pink }]}>الجولة مازال كتلعب · النقاط live</Text> : null}
+      <Text style={[s.small, { textAlign: 'center', paddingTop: 4 }]}>كليكي على العمود باش ترتب · سكرولي ↔ باش تشوف كولشي</Text>
+      <View style={[s.gridRow, s.gridHeadRow]}>
+        <View style={[s.gridName, s.gridH, { height: 44 }]}><Text style={s.gridHT}># · اللاعب</Text></View>
+        <ScrollView ref={head} horizontal scrollEnabled={false} showsHorizontalScrollIndicator={false} style={{ flex: 1, direction: 'ltr' }}>
+          <View style={{ flexDirection: 'row-reverse', width }}>{cols.map(hcell)}</View>
+        </ScrollView>
+      </View>
+      <ScrollView style={{ flex: 1 }} refreshControl={refreshControl}>
+        <View style={s.gridRow}>
+          <View style={s.gridName}>
+            {sorted.map((x, i) => (
+              <TouchableOpacity key={x.id} onPress={() => open(x.id)} style={[s.gridNameCell, i % 2 && s.gridAlt, x.id === meId && { backgroundColor: C.me }]}>
+                <View style={[s.rk, { width: 24, height: 24 }, x.pts === max && { backgroundColor: C.gold }, x.id === donkeyId && { backgroundColor: C.donkey }]}>
+                  <Text style={[s.rkT, (x.pts === max || x.id === donkeyId) && { color: '#fff' }]}>{pos[i]}</Text>
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[s.txt, s.bold, { fontSize: 13, writingDirection: 'ltr', textAlign: 'right' }]} numberOfLines={1}>{x.name}{x.pts === max ? ' ⭐' : ''}{x.id === donkeyId ? (live ? ' ⏳🐴' : ' 🐴') : ''}</Text>
+                  <Text style={[s.small, { fontSize: 10 }]} numberOfLines={1}>{x.team}</Text>
+                </View>
+              </TouchableOpacity>
+            ))}
+          </View>
+          <ScrollView ref={body} horizontal style={{ flex: 1, direction: 'ltr' }} onContentSizeChange={toEnd} onLayout={toEnd}
+            scrollEventThrottle={16} onScroll={e => head.current && head.current.scrollTo({ x: e.nativeEvent.contentOffset.x, animated: false })}>
+            <View style={{ width }}>
+              {sorted.map((x, i) => (
+                <TouchableOpacity key={x.id} activeOpacity={0.7} onPress={() => open(x.id)} style={[s.gridCells, i % 2 && s.gridAlt, x.id === meId && { backgroundColor: C.me }]}>
+                  {cols.map(cl => (
+                    <View key={cl.k} style={[s.gridCell, { width: cl.w }, sort.k === cl.k && s.gridCellOn]}>{cell(x, cl)}</View>
+                  ))}
+                </TouchableOpacity>
+              ))}
+            </View>
+          </ScrollView>
+        </View>
+      </ScrollView>
     </View>
   );
 }
@@ -1816,6 +1911,20 @@ const s = StyleSheet.create({
   small: { fontSize: 12, color: C.muted, textAlign: 'right' },
   bold: { fontWeight: '700' },
   num: { fontSize: 14, color: C.ink, fontVariant: ['tabular-nums'] },
+  gridRow: { flexDirection: 'row-reverse' },
+  gridHeadRow: { backgroundColor: C.bg, borderBottomWidth: 1, borderColor: C.line, marginTop: 6 },
+  gridName: { width: 150, borderLeftWidth: 1, borderColor: C.line },
+  gridNameCell: { height: GRID_ROW, flexDirection: 'row-reverse', alignItems: 'center', gap: 6, paddingHorizontal: 8, borderBottomWidth: 1, borderColor: C.line },
+  gridCells: { height: GRID_ROW, flexDirection: 'row-reverse', borderBottomWidth: 1, borderColor: C.line },
+  gridCell: { alignItems: 'center', justifyContent: 'center', paddingHorizontal: 2 },
+  gridCellOn: { backgroundColor: 'rgba(233,0,82,0.06)' },
+  gridAlt: { backgroundColor: '#faf8fb' },
+  gridH: { height: 44, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 2 },
+  gridHOn: { backgroundColor: 'rgba(233,0,82,0.08)', borderBottomWidth: 2, borderColor: C.pink },
+  gridHT: { fontSize: 11, color: C.muted, fontWeight: '800', textAlign: 'center' },
+  gridArrow: { fontSize: 9, color: '#c4bcc6', marginTop: 1 },
+  gridNum: { fontSize: 14, fontWeight: '700', color: C.ink, fontVariant: ['tabular-nums'] },
+  gridDim: { fontSize: 13, color: '#c4bcc6' },
   colN: { width: 58, textAlign: 'left' },
   tr: { flexDirection: 'row-reverse', alignItems: 'center', paddingVertical: 10, paddingHorizontal: 12, borderBottomWidth: 1, borderColor: C.line, gap: 6 },
   thRow: { paddingVertical: 6, backgroundColor: C.bg },
