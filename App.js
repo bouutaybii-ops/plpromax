@@ -107,7 +107,13 @@ async function loadLeague() {
         if (!pk) return;
         const t = liveTeam({ picks: pk.picks, chip: pk.active_chip, players, live: ctx.live, byTeam: ctx.byTeam, bonus: ctx.bonus });
         const hit = (pk.entry_history || {}).event_transfers_cost || 0;
-        m.gws[current] = { ...(m.gws[current] || {}), p: t.total - hit, raw: t.total, h: hit, c: pk.active_chip || '', bench: t.benchPts, tr: (pk.entry_history || {}).event_transfers || 0, live: true, left: t.left, prov: t.provisional };
+        // B7al fplgameweek: chkoun l-captain (wla l-vice ila khda l-capitanat), ch7al kayl3bou daba,
+        // w ch7al mazal ma bdaw (ghir li kaythesbou f l-équipe).
+        const counting = t.rows.filter(r => r.eff > 0 || r.subIn);
+        const capRow = t.rows.find(r => r.eff >= 2) || t.rows.find(r => r.is_captain);
+        const inPlay = counting.filter(r => r.started && !r.done).length;
+        const toStart = counting.filter(r => !r.started).length;
+        m.gws[current] = { ...(m.gws[current] || {}), cap: capRow ? capRow.element : null, capVice: !!(capRow && !capRow.is_captain), inPlay, toStart, p: t.total - hit, raw: t.total, h: hit, c: pk.active_chip || '', bench: t.benchPts, tr: (pk.entry_history || {}).event_transfers || 0, live: true, left: t.left, prov: t.provisional };
       });
     } catch {}
   }
@@ -359,7 +365,7 @@ function Login({ data, onLogin, loading, error }) {
 }
 
 /* ---------------- screens ---------------- */
-function Classement({ c, meId, open, refreshControl }) {
+function Classement({ c, data, meId, open, refreshControl }) {
   const shares = [0.5, 0.3, 0.2];
   const medal = [C.gold, C.silver, C.bronze];
   const allGws = [...new Set(c.table.flatMap(r => r.list.map(x => x.gw)))].sort((a, b) => a - b);
@@ -382,6 +388,10 @@ function Classement({ c, meId, open, refreshControl }) {
     const max = rows.length ? rows[0].g.p : null;
     const finishedD = c.byGw.find(b => b.gw === gw);
     const donkeyId = finishedD ? finishedD.ids[0] : (live && c.liveDonkey ? c.liveDonkey.ids[0] : null);
+    // Mjmou3 ch-chhar (phases dyal FPL) 7tta l-jawla l-mkhtara.
+    const phase = (data.phases || []).find(ph => gw >= ph.from && gw <= ph.to);
+    const monthPts = m => (phase ? Object.entries(m.gws).filter(([g]) => +g >= phase.from && +g <= gw).reduce((a, [, x]) => a + x.p, 0) : null);
+    const pname = el => (data.players[el] || {}).n || '';
     return (
       <View style={s.fixedPage}>
         {Toggle}
@@ -391,8 +401,8 @@ function Classement({ c, meId, open, refreshControl }) {
           <View style={[s.tr, s.thRow]}>
             <Text style={[s.th, { width: 30 }]}>#</Text>
             <Text style={[s.th, { flex: 1 }]}>اللاعب</Text>
-            <Text style={[s.th, s.colN]}>-4</Text>
-            <Text style={[s.th, s.colN]}>النقاط</Text>
+            {phase ? <Text style={[s.th, s.colN]}>الشهر</Text> : null}
+            <Text style={[s.th, s.colN]}>الجولة</Text>
           </View>
           <ScrollView style={{ flex: 1 }} refreshControl={refreshControl}>
           {rows.map((x, i) => (
@@ -402,15 +412,24 @@ function Classement({ c, meId, open, refreshControl }) {
               </View>
               <View style={{ flex: 1, paddingHorizontal: 8 }}>
                 <Text style={[s.txt, s.bold]} numberOfLines={1}>{x.r.m.name}{x.g.p === max ? '  ⭐' : ''}{x.r.m.id === donkeyId ? (live ? '  ⏳🐴' : '  🐴') : ''}</Text>
-                <View style={{ flexDirection: 'row-reverse', gap: 6, alignItems: 'center' }}>
-                  <Text style={s.small} numberOfLines={1}>{x.r.m.team}</Text>
+                <View style={{ flexDirection: 'row-reverse', gap: 6, alignItems: 'center', flexWrap: 'wrap', marginTop: 2 }}>
+                  {x.g.cap ? (
+                    <View style={s.capTag}>
+                      <Text style={s.capTagC}>{x.g.capVice ? 'V' : 'C'}</Text>
+                      <Text style={s.capTagT} numberOfLines={1}>{pname(x.g.cap)}</Text>
+                    </View>
+                  ) : <Text style={s.small} numberOfLines={1}>{x.r.m.team}</Text>}
                   {x.g.c ? <Pill text={CHIPS[x.g.c]?.short || x.g.c} color={CHIPS[x.g.c]?.color} /> : null}
-                  {x.g.live && x.g.left ? <Text style={[s.small, { color: C.pink }]}>⏳{x.g.left}</Text> : null}
+                  {x.g.live && x.g.inPlay ? <View style={[s.liveTag, { backgroundColor: '#e7fff3', borderColor: '#9be8c2' }]}><Text style={[s.liveTagT, { color: '#0a7a45' }]}>▶ {x.g.inPlay} كيلعبو</Text></View> : null}
+                  {x.g.live && x.g.toStart ? <View style={s.liveTag}><Text style={s.liveTagT}>⏳ {x.g.toStart} مازال</Text></View> : null}
                   {x.g.live && x.g.prov ? <Text style={[s.small, { color: '#c99a00', fontWeight: '700' }]}>★+{x.g.prov}</Text> : null}
                 </View>
               </View>
-              <Text style={[s.num, s.colN, { color: x.g.h ? C.bad : C.muted }]}>{x.g.h ? '−' + x.g.h : '–'}</Text>
-              <Text style={[s.num, s.colN, s.bold]}>{x.g.p}</Text>
+              {phase ? <Text style={[s.num, s.colN, { color: C.muted }]}>{monthPts(x.r.m)}</Text> : null}
+              <View style={[s.colN, { alignItems: 'center' }]}>
+                <Text style={[s.num, s.bold]}>{x.g.p}</Text>
+                {x.g.h ? <Text style={{ fontSize: 10, color: C.bad, fontWeight: '700' }}>−{x.g.h}</Text> : null}
+              </View>
             </TouchableOpacity>
           ))}
           </ScrollView>
@@ -1710,7 +1729,7 @@ export default function App() {
             // Had les pages 3ndhom scroll dyalhom: l-entêtes dyal les jadawel kayb9aw tabtin.
             <View style={{ flex: 1, backgroundColor: C.bg }}>
               {error ? <View style={[s.err, { margin: 14, marginBottom: 0 }]}><Text style={{ color: C.bad, textAlign: 'right' }}>{error}</Text></View> : null}
-              {tab === 'table' ? <Classement c={c} meId={meId} open={open} refreshControl={pullToRefresh} /> :
+              {tab === 'table' ? <Classement c={c} data={data} meId={meId} open={open} refreshControl={pullToRefresh} /> :
                tab === 'hmar' ? <Hmar c={c} open={open} refreshControl={pullToRefresh} /> :
                tab === 'stats' ? <Stats c={c} data={data} meId={meId} open={open} refreshControl={pullToRefresh} /> :
                <Fund c={c} refreshControl={pullToRefresh} />}
@@ -1780,6 +1799,11 @@ const s = StyleSheet.create({
   pillT: { fontSize: 11, fontWeight: '700' },
   hmar: { flexDirection: 'row-reverse', gap: 14, alignItems: 'center', backgroundColor: C.donkeyBg, borderWidth: 1, borderColor: C.donkey, borderRadius: 12, padding: 16 },
   hmarBig: { fontSize: 44 },
+  capTag: { flexDirection: 'row-reverse', alignItems: 'center', gap: 4, maxWidth: 130 },
+  capTagC: { width: 16, height: 16, borderRadius: 8, backgroundColor: C.ink, color: '#fff', fontSize: 9, fontWeight: '900', textAlign: 'center', lineHeight: 16, overflow: 'hidden' },
+  capTagT: { fontSize: 12, color: C.ink, fontWeight: '700', flexShrink: 1 },
+  liveTag: { borderRadius: 999, paddingHorizontal: 6, paddingVertical: 1, backgroundColor: '#fff4e5', borderWidth: 1, borderColor: '#ffd8a3' },
+  liveTagT: { fontSize: 10, fontWeight: '800', color: '#9a5b00' },
   statHero: { backgroundColor: C.pitch, borderRadius: 16, padding: 14, gap: 10, borderBottomWidth: 3, borderColor: C.neon },
   statHeroT: { color: C.cyan, fontSize: 13, fontWeight: '800', textAlign: 'right' },
   statTiles: { flexDirection: 'row-reverse', flexWrap: 'wrap', gap: 8 },
