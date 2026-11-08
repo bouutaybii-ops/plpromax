@@ -1166,9 +1166,10 @@ function Player({ c, data, id, isMe, onLogout, onBack, staff, onSession, onStaff
         <Text style={s.heroName}>{r.m.team}</Text>
         <Text style={s.heroSub}>{r.m.name} · ID {r.m.id}</Text>
         <View style={s.stats}>
-          <Stat n={'#' + r.rank} l="الترتيب" />
-          <Stat n={r.total} l="المجموع" />
-          <Stat n={'🐴' + r.donkeys.length} l="حمار" />
+          {/* F "فرقتي" l-ar9am dyalek kaynin f l-header lfo9: hna ghir dakchi li ma kaynch tmma. */}
+          {!isMe ? <Stat n={'#' + r.rank} l="الترتيب" /> : null}
+          {!isMe ? <Stat n={r.total} l="المجموع" /> : null}
+          {!isMe ? <Stat n={'🐴' + r.donkeys.length} l="حمار" /> : null}
           <Stat n={r.pen.amount} l="كيخلص DH" />
         </View>
       </View>
@@ -1681,15 +1682,12 @@ export default function App() {
         <>
           <View style={s.header}>
             <View style={s.topBar}>
-              <TouchableOpacity onPress={() => setMenu(true)} style={s.menuBtn} accessibilityLabel="القائمة">
-                <Text style={s.menuIcon}>☰</Text>
-              </TouchableOpacity>
               <TouchableOpacity onPress={() => { setTab('me'); setViewId(null); }} style={{ flex: 1 }}>
                 <Text style={s.meName} numberOfLines={1}>{me ? me.m.name : ''}</Text>
                 <Text style={s.eyebrow} numberOfLines={1}>{me ? me.m.team : ''} · {pageTitle}</Text>
               </TouchableOpacity>
             </View>
-            {me ? (
+            {me && tab === 'me' && !viewId ? (
               <View style={s.kpis}>
                 <View style={s.kpi}><Text style={s.kpiN}>#{me.rank}</Text><Text style={s.kpiL}>الترتيب</Text></View>
                 <View style={s.kpi}>
@@ -1701,7 +1699,7 @@ export default function App() {
               </View>
             ) : null}
           </View>
-          <Modal visible={menu} transparent animationType="fade" onRequestClose={() => setMenu(false)}>
+          <Modal visible={menu} transparent animationType="slide" onRequestClose={() => setMenu(false)}>
             <TouchableOpacity activeOpacity={1} style={s.drawerShade} onPress={() => setMenu(false)}>
               <TouchableOpacity activeOpacity={1} style={s.drawer} onPress={() => {}}>
                 <Text style={s.drawerTitle}>{data.leagueName}</Text>
@@ -1717,8 +1715,7 @@ export default function App() {
                     </TouchableOpacity>
                   );
                 })}
-                <View style={{ flex: 1 }} />
-                <TouchableOpacity onPress={() => { setMenu(false); logout(); }} style={s.drawerItem} accessibilityLabel="تسجيل الخروج">
+                <TouchableOpacity onPress={() => { setMenu(false); logout(); }} style={[s.drawerItem, { marginTop: 8 }]} accessibilityLabel="تسجيل الخروج">
                   <Text style={s.drawerIcon}>⎋</Text>
                   <Text style={s.drawerT}>تسجيل الخروج</Text>
                 </TouchableOpacity>
@@ -1749,6 +1746,27 @@ export default function App() {
             <Text style={[s.small, { textAlign: 'center' }]}>سحب للأسفل باش تحدث</Text>
           </ScrollView>
           )}
+          {/* L-bar dyal l-te7t b7al FPL: les pages l-mohimmin, w "المزيد" fiha kolchi. */}
+          <View style={s.bottomNav}>
+            {[['table', 'الترتيب', '🏆'], ['me', 'فرقتي', '⚽'], ['hmar', 'الحمار', '🐴'], ['stats', 'إحصائيات', '📊']].map(([k, l, icon]) => {
+              const on = tab === k && !viewId;
+              return (
+                <TouchableOpacity key={k} onPress={() => { setTab(k); setViewId(null); }} style={s.bottomItem} accessibilityRole="tab" accessibilityState={{ selected: on }}>
+                  <View style={[s.bottomIconWrap, on && s.bottomIconOn]}><Text style={s.bottomIcon}>{icon}</Text></View>
+                  <Text style={[s.bottomT, on && s.bottomTOn]}>{l}</Text>
+                </TouchableOpacity>
+              );
+            })}
+            {(() => {
+              const on = !viewId && !['table', 'me', 'hmar', 'stats'].includes(tab);
+              return (
+                <TouchableOpacity onPress={() => setMenu(true)} style={s.bottomItem} accessibilityLabel="المزيد">
+                  <View style={[s.bottomIconWrap, on && s.bottomIconOn]}><Text style={[s.bottomIcon, { color: on ? C.pitch : '#fff' }]}>☰</Text></View>
+                  <Text style={[s.bottomT, on && s.bottomTOn]}>المزيد</Text>
+                </TouchableOpacity>
+              );
+            })()}
+          </View>
         </>
       )}
     </SafeAreaView>
@@ -1767,8 +1785,15 @@ const s = StyleSheet.create({
   kpi: { flex: 1, backgroundColor: 'rgba(255,255,255,0.08)', borderRadius: 10, paddingVertical: 6, paddingHorizontal: 8, borderTopWidth: 2, borderColor: C.neon },
   kpiN: { color: '#fff', fontSize: 16, fontWeight: '800', fontVariant: ['tabular-nums'], textAlign: 'right' },
   kpiL: { color: '#d9c7dc', fontSize: 10, textAlign: 'right' },
-  drawerShade: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', alignItems: 'flex-end' },
-  drawer: { width: '78%', maxWidth: 320, height: '100%', backgroundColor: C.pitch, paddingTop: 48, paddingHorizontal: 14, paddingBottom: 28, gap: 4 },
+  drawerShade: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' },
+  drawer: { width: '100%', backgroundColor: C.pitch, borderTopLeftRadius: 20, borderTopRightRadius: 20, paddingTop: 18, paddingHorizontal: 14, paddingBottom: 28, gap: 4 },
+  bottomNav: { flexDirection: 'row-reverse', backgroundColor: C.pitch, borderTopWidth: 3, borderColor: C.pink, paddingTop: 6, paddingBottom: 8 },
+  bottomItem: { flex: 1, alignItems: 'center', gap: 2 },
+  bottomIconWrap: { width: 52, height: 28, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
+  bottomIconOn: { backgroundColor: C.neon },
+  bottomIcon: { fontSize: 17, color: '#fff' },
+  bottomT: { color: '#d9c7dc', fontSize: 11, fontWeight: '700' },
+  bottomTOn: { color: '#fff' },
   drawerTitle: { color: '#fff', fontSize: 22, fontWeight: '900', textAlign: 'right' },
   drawerItem: { flexDirection: 'row-reverse', alignItems: 'center', gap: 12, paddingVertical: 12, paddingHorizontal: 12, borderRadius: 12 },
   drawerItemOn: { backgroundColor: C.neon },
