@@ -625,9 +625,53 @@ function TeamBadge({ info }) {
   if (!info || !info.code || bad) return <View style={[s.fxBadge, s.fxBadgeAlt]}><Text style={s.fxBadgeT}>{info ? info.s : '?'}</Text></View>;
   return <Image source={{ uri: BADGE(info.code) }} style={s.fxBadge} resizeMode="contain" onError={() => setBad(true)} accessibilityLabel={info.n} />;
 }
-function Matches({ data, refreshControl }) {
+// Soura sghira dyal joueur (b7al FPL) m3a C/V w l-bank b chfafiya.
+function MiniFace({ el, pick, data }) {
+  const pl = data.players[el] || {};
+  const [i, setI] = useState(0);
+  const urls = pl.c ? photoUrls(pl.c) : [];
+  const bench = pick.position > 11;
+  const badge = pick.is_captain ? (pick.multiplier === 3 ? 'TC' : 'C') : pick.is_vice_captain ? 'V' : null;
+  return (
+    <View style={[s.mini, bench && { opacity: 0.45 }]}>
+      <View style={s.miniPhotoWrap}>
+        {i < urls.length
+          ? <Image source={{ uri: urls[i] }} style={s.miniPhoto} resizeMode="cover" onError={() => setI(i + 1)} />
+          : <Text style={s.miniInit}>{(pl.n || '?').slice(0, 2)}</Text>}
+        {badge ? <View style={s.miniBadge}><Text style={s.miniBadgeT}>{badge}</Text></View> : null}
+      </View>
+      <Text style={s.miniName} numberOfLines={1}>{pl.n || '?'}</Text>
+    </View>
+  );
+}
+
+// L-joueurs dyali f jawla mo3ayana: l-jawlat li fatou mn picks dyalha; l-jawla l-jaya = picks
+// dyal l-jawla l-7aliya + les transferts li dert liha.
+async function myPicksFor(meId, gw, current) {
+  const base = Math.min(gw, current || gw);
+  const pk = await getJson(`/entry/${meId}/event/${base}/picks/`);
+  let picks = pk.picks.map(x => ({ ...x }));
+  if (gw > base) {
+    const tr = await getJson(`/entry/${meId}/transfers/`).catch(() => []);
+    tr.filter(t => t.event > base && t.event <= gw).sort((a, b) => Date.parse(a.time) - Date.parse(b.time)).forEach(t => {
+      const p = picks.find(x => x.element === t.element_out);
+      if (p) p.element = t.element_in;
+    });
+  }
+  return Object.fromEntries(picks.map(x => [x.element, x]));
+}
+
+function Matches({ data, meId, refreshControl }) {
   const list = Array.from({ length: 38 }, (_, i) => i + 1);
   const [gw, setGw] = useState(data.current || 1);
+  const [mine, setMine] = useState({});
+  useEffect(() => {
+    let alive = true;
+    setMine({});
+    if (meId) myPicksFor(meId, gw, data.current).then(m => alive && setMine(m)).catch(() => {});
+    return () => { alive = false; };
+  }, [gw, meId, data.current]);
+  const myTeam = teamId => Object.values(mine).filter(x => (data.players[x.element] || {}).team === teamId).sort((a, b) => a.position - b.position);
   const [fx, setFx] = useState(null);
   const [err, setErr] = useState(false);
   const [openId, setOpenId] = useState(null);
@@ -670,8 +714,8 @@ function Matches({ data, refreshControl }) {
     bonus.sort((a, b) => b.v - a.v);
     const bps = [...st('bps').h.map(r => ({ ...r, side: 'h' })), ...st('bps').a.map(r => ({ ...r, side: 'a' }))].sort((a, b) => b.value - a.value).slice(0, 6);
     const side = rows => rows.map(r => (
-      <View key={r.element} style={s.fxEvRow}>
-        <Text style={s.fxEvName} numberOfLines={1}>{pn(r.element)}{r.value > 1 ? ` ×${r.value}` : ''}</Text>
+      <View key={r.element} style={[s.fxEvRow, mine[r.element] && s.fxMine]}>
+        <Text style={[s.fxEvName, mine[r.element] && s.fxMineT]} numberOfLines={1}>{pn(r.element)}{r.value > 1 ? ` ×${r.value}` : ''}</Text>
         <Own el={r.element} />
       </View>
     ));
@@ -696,9 +740,9 @@ function Matches({ data, refreshControl }) {
           <View style={s.fxEv}>
             <Text style={s.fxEvLabel}>★ البونيس {isConf ? '' : '(حسب BPS دابا)'}</Text>
             {bonus.map(b => (
-              <View key={b.el} style={s.fxBonusRow}>
+              <View key={b.el} style={[s.fxBonusRow, mine[b.el] && s.fxMine]}>
                 <View style={[s.fxBonusN, { backgroundColor: b.v === 3 ? C.gold : b.v === 2 ? C.silver : C.bronze }]}><Text style={s.fxBonusNT}>{b.v}</Text></View>
-                <Text style={[s.fxEvName, { flex: 1 }]} numberOfLines={1}>{pn(b.el)}</Text>
+                <Text style={[s.fxEvName, { flex: 1 }, mine[b.el] && s.fxMineT]} numberOfLines={1}>{pn(b.el)}</Text>
                 <Own el={b.el} />
                 <Text style={s.small}>{info((data.players[b.el] || {}).team).s}</Text>
               </View>
@@ -709,8 +753,8 @@ function Matches({ data, refreshControl }) {
           <View style={s.fxEv}>
             <Text style={s.fxEvLabel}>📊 أحسن BPS</Text>
             {bps.map(r => (
-              <View key={r.element} style={s.fxBonusRow}>
-                <Text style={[s.fxEvName, { flex: 1 }]} numberOfLines={1}>{pn(r.element)}</Text>
+              <View key={r.element} style={[s.fxBonusRow, mine[r.element] && s.fxMine]}>
+                <Text style={[s.fxEvName, { flex: 1 }, mine[r.element] && s.fxMineT]} numberOfLines={1}>{pn(r.element)}</Text>
                 <Text style={s.small}>{info(r.side === 'h' ? f.team_h : f.team_a).s}</Text>
                 <View style={s.fxBpsBar}><View style={[s.fxBpsFill, { width: `${Math.max(4, (r.value / Math.max(1, bps[0].value)) * 100)}%` }]} /></View>
                 <Text style={[s.gridNum, { width: 30, textAlign: 'left', fontSize: 12 }]}>{r.value}</Text>
@@ -750,6 +794,13 @@ function Matches({ data, refreshControl }) {
             <Text style={[s.fxTeamT, { textAlign: 'left' }]} numberOfLines={1}>{a.n}</Text>
           </View>
         </View>
+        {myTeam(f.team_h).length || myTeam(f.team_a).length ? (
+          <View style={s.fxMinis}>
+            <View style={[s.fxMiniSide, { flexDirection: 'row-reverse' }]}>{myTeam(f.team_h).map(x => <MiniFace key={x.element} el={x.element} pick={x} data={data} />)}</View>
+            <View style={{ width: 74 }} />
+            <View style={[s.fxMiniSide, { flexDirection: 'row' }]}>{myTeam(f.team_a).map(x => <MiniFace key={x.element} el={x.element} pick={x} data={data} />)}</View>
+          </View>
+        ) : null}
         {f.started ? <Text style={s.fxMore}>{isOpen ? '▴ خبي التفاصيل' : '▾ التفاصيل والبونيس'}</Text> : null}
         {isOpen ? detail(f) : null}
       </TouchableOpacity>
@@ -2330,7 +2381,7 @@ export default function App() {
               {error ? <View style={[s.err, { margin: 14, marginBottom: 0 }]}><Text style={{ color: C.bad, textAlign: 'right' }}>{error}</Text></View> : null}
               {tab === 'table' ? <Classement c={c} data={data} meId={meId} open={open} refreshControl={pullToRefresh} /> :
                tab === 'scout' ? <Scout c={c} data={data} refreshControl={pullToRefresh} /> :
-               tab === 'matches' ? <Matches data={data} refreshControl={pullToRefresh} /> :
+               tab === 'matches' ? <Matches data={data} meId={meId} refreshControl={pullToRefresh} /> :
                tab === 'hmar' ? <Hmar c={c} open={open} refreshControl={pullToRefresh} /> :
                tab === 'stats' ? <Stats c={c} data={data} meId={meId} open={open} refreshControl={pullToRefresh} /> :
                <Fund c={c} refreshControl={pullToRefresh} />}
@@ -2417,6 +2468,17 @@ const s = StyleSheet.create({
   small: { fontSize: 12, color: C.muted, textAlign: 'right' },
   bold: { fontWeight: '700' },
   num: { fontSize: 14, color: C.ink, fontVariant: ['tabular-nums'] },
+  fxMinis: { flexDirection: 'row-reverse', marginTop: 6 },
+  fxMiniSide: { flex: 1, gap: 4, flexWrap: 'wrap' },
+  mini: { width: 44, alignItems: 'center' },
+  miniPhotoWrap: { width: 32, height: 32, borderRadius: 16, backgroundColor: '#efe6f3', overflow: 'visible', alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: '#953bff' },
+  miniPhoto: { width: 28, height: 28, borderRadius: 14 },
+  miniInit: { fontSize: 10, fontWeight: '900', color: C.pitch },
+  miniBadge: { position: 'absolute', top: -4, right: -6, minWidth: 14, height: 14, paddingHorizontal: 2, borderRadius: 7, backgroundColor: C.ink, alignItems: 'center', justifyContent: 'center' },
+  miniBadgeT: { color: '#fff', fontSize: 8, fontWeight: '900' },
+  miniName: { fontSize: 9, fontWeight: '800', color: '#953bff', marginTop: 1, maxWidth: 44 },
+  fxMine: { backgroundColor: '#f3e8ff', borderRadius: 6, paddingHorizontal: 4 },
+  fxMineT: { color: '#7a1fe0', fontWeight: '900' },
   fxDay: { fontSize: 13, fontWeight: '900', color: C.pitch, textAlign: 'right', marginTop: 6, paddingHorizontal: 4 },
   fxCard: { backgroundColor: C.card, borderRadius: 16, paddingVertical: 12, paddingHorizontal: 12, borderWidth: 1, borderColor: C.line },
   fxCardLive: { borderColor: C.pink, borderWidth: 2 },
