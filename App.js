@@ -7,6 +7,7 @@ import {
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { LinearGradient } from 'expo-linear-gradient';
 import { fixturesByTeam, liveStats, liveTeam, provisionalBonus } from './live';
 import { donkeyDeadline, formatMoroccoDate, splitCountdown } from './donkey';
 import { leaguePickStats, leagueStats } from './stats';
@@ -45,8 +46,8 @@ const POS = { 1: 'GK', 2: 'DEF', 3: 'MID', 4: 'FWD' };
 // Couleurs inspirées de la Premier League: violet, magenta, cyan, vert fluo
 const C = {
   pitch: '#37003c', pitch2: '#5a0b62', pink: '#e90052', cyan: '#04f5ff', neon: '#00ff85',
-  bg: '#f4f2f5', card: '#ffffff', ink: '#1d0a20', muted: '#6c5f70',
-  line: '#e7e1e9', gold: '#c9a227', silver: '#8b8f99', bronze: '#b06a3b', donkey: '#8a5a2b', donkeyBg: '#f6ece1',
+  bg: '#f2f2f4', card: '#ffffff', ink: '#1a0a1e', muted: '#76697a',
+  line: '#ecebef', gold: '#c9a227', silver: '#8b8f99', bronze: '#b06a3b', donkey: '#8a5a2b', donkeyBg: '#f6ece1',
   bad: '#e90052', good: '#00a35c', me: '#f1e6f3',
   grass1: '#1f9d55', grass2: '#22a85c',
 };
@@ -303,7 +304,7 @@ function Pill({ text, color, kind }) {
   return <View style={[s.pill, { backgroundColor: bg }]}><Text style={[s.pillT, { color: fg }]}>{text}</Text></View>;
 }
 function Stat({ n, l }) {
-  return <View style={s.stat}><Text style={s.statN}>{n}</Text><Text style={[s.small, { color: '#d9c7dc' }]}>{l}</Text></View>;
+  return <View style={s.stat}><Text style={s.statN}>{n}</Text><Text style={[s.small, { textAlign: 'center' }]}>{l}</Text></View>;
 }
 
 /* ---------------- login ---------------- */
@@ -381,15 +382,34 @@ function Login({ data, onLogin, loading, error }) {
 /* ---------------- screens ---------------- */
 // Les onglets dyal kol safha (nafs l-design f l-app kamla): PageTabs = l-mostawa l-awel (mouf),
 // SubTabs = dakhel l-onglet (byed).
-function PageTabs({ tabs, value, onChange }) {
+function PageTabs({ title, sub, tabs = [], value, onChange, onBack }) {
+  // Header b7al FPL: gradient mouf, l-3onwan kbir, w les onglets b khatt akhdar ta7t l-mkhtar.
+  // Kaykhrej l l-7orof dyal s-safha (margin -14) bach yji 3la l-3ard kamel.
   return (
-    <View style={s.tTabs}>
-      {tabs.map(([k, l]) => (
-        <TouchableOpacity key={k} onPress={() => onChange(k)} style={[s.tTab, value === k && s.tTabOn]} accessibilityRole="tab" accessibilityState={{ selected: value === k }}>
-          <Text style={[s.tTabT, value === k && s.tTabTOn]} numberOfLines={1}>{l}</Text>
-        </TouchableOpacity>
-      ))}
-    </View>
+    <LinearGradient colors={['#37003c', '#5b0a63', '#7a1fa2']} start={{ x: 1, y: 0 }} end={{ x: 0, y: 1 }} style={[s.ph, !title && { paddingTop: 0 }]}>
+      {title ? (
+        <View style={s.phTop}>
+          {onBack ? <TouchableOpacity onPress={onBack} style={s.phBack} accessibilityLabel="رجوع"><Text style={s.phBackT}>→</Text></TouchableOpacity> : null}
+          <View style={{ flex: 1 }}>
+            <Text style={s.phTitle} numberOfLines={1}>{title}</Text>
+            {sub ? <Text style={s.phSub} numberOfLines={1}>{sub}</Text> : null}
+          </View>
+        </View>
+      ) : null}
+      {tabs.length ? (
+        <View style={s.phTabs}>
+          {tabs.map(([k, l]) => {
+            const on = value === k;
+            return (
+              <TouchableOpacity key={k} onPress={() => onChange(k)} style={s.phTab} accessibilityRole="tab" accessibilityState={{ selected: on }}>
+                <Text style={[s.phTabT, on && s.phTabTOn]} numberOfLines={1}>{l}</Text>
+                <View style={[s.phLine, on && s.phLineOn]} />
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+      ) : <View style={{ height: 14 }} />}
+    </LinearGradient>
   );
 }
 function SubTabs({ tabs, value, onChange }) {
@@ -411,7 +431,7 @@ function Classement({ c, data, meId, open, refreshControl }) {
   const [mode, setMode] = useState('total');
   const [gw, setGw] = useState(c.showGw || allGws[allGws.length - 1]);
 
-  const Toggle = <PageTabs tabs={[['total', '🏆 الترتيب العام'], ['gw', '📅 ترتيب الجولة']]} value={mode} onChange={setMode} />;
+  const Toggle = <PageTabs title="الترتيب" sub={`${data.leagueName || 'PL PRO MAX'} · ${c.table.length} مدرب`} tabs={[['total', 'الترتيب العام'], ['gw', 'ترتيب الجولة']]} value={mode} onChange={setMode} />;
 
   if (mode === 'gw') {
     return (
@@ -846,6 +866,7 @@ function Matches({ data, meId, refreshControl }) {
 
   return (
     <View style={s.fixedPage}>
+      <PageTabs title="الماتشات" sub={`Gameweek ${gw}${anyLive ? ' · 🔴 live' : ''}`} />
       <View style={[s.card, { overflow: 'hidden' }]}><GwNav list={list} gw={gw} setGw={setGw} /></View>
       <ScrollView style={{ flex: 1 }} contentContainerStyle={{ gap: 10, paddingBottom: 24 }} refreshControl={refreshControl}>
         {err ? <View style={s.err}><Text style={{ color: C.bad, textAlign: 'right' }}>ما قدرتش نجيب الماتشات.</Text></View> : null}
@@ -999,7 +1020,7 @@ function Scout({ c, data, meId, refreshControl }) {
   const shown = list.slice(0, limit);
   const reset = f => v => { f(v); setLimit(40); };
 
-  const Seg = <PageTabs tabs={[['players', '📊 اللاعبين'], ['transfers', '🔄 الانتقالات']]} value={view} onChange={setView} />;
+  const Seg = <PageTabs title="الكشافة" sub="اللاعبين الحقيقيين و الانتقالات" tabs={[['players', 'اللاعبين'], ['transfers', 'الانتقالات']]} value={view} onChange={setView} />;
   const sheet = sel ? <PlayerSheet p={sel.p} team={sel.team} data={data} c={c} onClose={() => setSel(null)} /> : null;
 
   if (view === 'transfers') {
@@ -1360,7 +1381,7 @@ function Hmar({ c, meId, open, refreshControl }) {
   ) : (
     <Card><Text style={[s.txt, { padding: 16 }]}>حتى جولة ما سالات من بداية الدوري.</Text></Card>
   );
-  const Tabs = <PageTabs tabs={[['rank', '🏆 الترتيب العام'], ['gw', '📅 حمار كل جولة']]} value={tab} onChange={setTab} />;
+  const Tabs = <PageTabs title="الحمار 🐴" sub={`${c.byGw.length} حمار · ${c.fund} DH فالصندوق`} tabs={[['rank', 'الترتيب العام'], ['gw', 'حمار كل جولة']]} value={tab} onChange={setTab} />;
 
   const rank = (
     <>
@@ -1426,8 +1447,8 @@ function Hmar({ c, meId, open, refreshControl }) {
 
   return (
     <View style={s.fixedPage}>
-      {banner}
       {Tabs}
+      {banner}
       <ScrollView style={{ flex: 1 }} contentContainerStyle={{ gap: 10, paddingBottom: 24 }} refreshControl={refreshControl}>
         {tab === 'rank' ? rank : perGw}
       </ScrollView>
@@ -1681,7 +1702,7 @@ function Stats({ c, data, meId, open, refreshControl }) {
   return (
     <View style={{ flex: 1 }}>
       <View style={{ paddingHorizontal: 14, paddingTop: 14 }}>
-        <PageTabs tabs={[['race', '📈 السباق'], ['gws', '🗺️ الجولات'], ['awards', '🏅 الألقاب'], ['teams', '⚽ الفرق']]} value={tab} onChange={setTab} />
+        <PageTabs title="إحصائيات" sub={`الليگ حتى GW${S.lastGw}`} tabs={[['race', 'السباق'], ['gws', 'الجولات'], ['awards', 'الألقاب'], ['teams', 'الفرق']]} value={tab} onChange={setTab} />
       </View>
       <Sections key={tab} refreshControl={refreshControl} sections={shown} />
     </View>
@@ -2045,12 +2066,10 @@ function Player({ c, data, id, isMe, onLogout, onBack, staff, onSession, onStaff
   const g = r.m.gws[gw] || {};
   return (
     <>
-      {onBack ? <TouchableOpacity onPress={onBack}><Text style={[s.txt, { color: C.pitch2, fontWeight: '700' }]}>→ رجوع</Text></TouchableOpacity> : null}
+      <PageTabs title={isMe ? null : r.m.team} sub={isMe ? null : `${r.m.name} · #${r.rank}`} onBack={onBack} tabs={[['team', 'التشكيلة'], ['season', 'الموسم']]} value={ptab} onChange={setPtab} />
       {/* F "فرقتي" l-ar9am dyalek kaynin f l-header lfo9: l-hero ghir l-ghir. */}
       {!isMe ? (
         <View style={s.hero}>
-          <Text style={s.heroName}>{r.m.team}</Text>
-          <Text style={s.heroSub}>{r.m.name} · ID {r.m.id}</Text>
           <View style={s.stats}>
             <Stat n={'#' + r.rank} l="الترتيب" />
             <Stat n={r.total} l="المجموع" />
@@ -2059,7 +2078,7 @@ function Player({ c, data, id, isMe, onLogout, onBack, staff, onSession, onStaff
           </View>
         </View>
       ) : null}
-      <PageTabs tabs={[['team', '⚽ التشكيلة'], ['season', '📈 الموسم']]} value={ptab} onChange={setPtab} />
+
 
       {ptab === 'team' ? (
       <Card>
@@ -2317,13 +2336,13 @@ function Finance({ c, sess, setSess, meId }) {
 
   return (
     <>
-      <View style={s.hero}>
-        <Text style={s.heroSub}>الصندوق فاليد</Text>
+      <View style={s.tHero}>
+        <Text style={s.tHeroK}>الصندوق فاليد</Text>
         <Text style={[s.heroName, { fontSize: 32, color: C.neon }]}>{fmt(cash)} DH</Text>
-        <View style={s.stats}>
-          <Stat n={`${feesIn}/${rows.length}`} l="الانخراط" />
-          <Stat n={`${fmt(penIn)}/${fmt(penOwed)}`} l="العقوبات" />
-          <Stat n={fmt(paidOut)} l="تعطات" />
+        <View style={{ flexDirection: 'row-reverse', gap: 10 }}>
+          <View style={s.tHeroBox}><Text style={s.tHeroN}>{feesIn}/{rows.length}</Text><Text style={s.tHeroL}>الانخراط</Text></View>
+          <View style={s.tHeroBox}><Text style={s.tHeroN}>{fmt(penIn)}/{fmt(penOwed)}</Text><Text style={s.tHeroL}>العقوبات</Text></View>
+          <View style={s.tHeroBox}><Text style={s.tHeroN}>{fmt(paidOut)}</Text><Text style={s.tHeroL}>تعطات</Text></View>
         </View>
       </View>
 
@@ -2443,7 +2462,7 @@ function Fund({ c, refreshControl }) {
   return (
     <View style={{ flex: 1 }}>
       <View style={{ paddingHorizontal: 14, paddingTop: 14 }}>
-        <PageTabs tabs={[['prize', '🏆 الجوائز'], ['fund', '🐴 صندوق الحمير']]} value={tab} onChange={setTab} />
+        <PageTabs title="الصندوق" sub="الجوائز و العقوبات" tabs={[['prize', 'الجوائز'], ['fund', 'صندوق الحمير']]} value={tab} onChange={setTab} />
       </View>
       <Sections
         refreshControl={refreshControl}
@@ -2674,6 +2693,9 @@ export default function App() {
             refreshControl={<RefreshControl refreshing={loading} onRefresh={() => refresh()} />}
           >
             {error ? <View style={s.err}><Text style={{ color: C.bad, textAlign: 'right' }}>{error}</Text></View> : null}
+            {!viewId && ['pay', 'rules', 'admin'].includes(tab) ? (
+              <PageTabs title={tab === 'pay' ? (isStaff ? 'الخلاص' : 'حسابي') : tab === 'rules' ? 'القانون' : 'الإدارة'} sub={tab === 'rules' ? 'قوانين الليگ و العقوبات' : data && data.leagueName} />
+            ) : null}
             {viewId ? <Player key={viewId} c={c} data={data} id={viewId} onBack={() => setViewId(null)} /> :
              tab === 'me' ? <Player key={meId} c={c} data={data} id={meId} isMe onLogout={logout} staff={sess ? (isAdmin ? 'admin' : sess.uid === CONFIG.staff.treasurer ? 'treasurer' : 'other') : null} onSession={setSess} onStaffOut={() => (CONFIG.protectedIds[meId] ? logout() : setSess(null))} /> :
              tab === 'pay' ? <Finance c={c} sess={sess} setSess={setSess} meId={meId} /> :
@@ -2736,15 +2758,15 @@ const s = StyleSheet.create({
   drawerT: { color: '#fff', fontSize: 16, fontWeight: '700', textAlign: 'right' },
   fixedPage: { flex: 1, padding: 14, gap: 14 },
   secHeadWeb: { position: 'sticky', top: 0, zIndex: 2 },
-  secHead: { backgroundColor: C.card, borderTopLeftRadius: 12, borderTopRightRadius: 12, overflow: 'hidden', borderBottomWidth: 1, borderColor: C.line },
-  secBody: { backgroundColor: C.card, borderBottomLeftRadius: 12, borderBottomRightRadius: 12, overflow: 'hidden', marginBottom: 14 },
-  secAlone: { borderTopLeftRadius: 12, borderTopRightRadius: 12 },
+  secHead: { backgroundColor: C.card, borderTopLeftRadius: 14, borderTopRightRadius: 14, overflow: 'hidden', borderBottomWidth: 1, borderColor: C.line },
+  secBody: { backgroundColor: C.card, borderBottomLeftRadius: 14, borderBottomRightRadius: 14, overflow: 'hidden', marginBottom: 16 },
+  secAlone: { borderTopLeftRadius: 14, borderTopRightRadius: 14 },
   fixedCard: { flex: 1 },
-  card: { backgroundColor: C.card, borderRadius: 12, overflow: 'hidden', shadowColor: '#37003c', shadowOpacity: 0.08, shadowRadius: 8, shadowOffset: { width: 0, height: 2 }, elevation: 2 },
-  cardH: { flexDirection: 'row-reverse', justifyContent: 'space-between', alignItems: 'baseline', padding: 12, borderBottomWidth: 1, borderColor: C.line },
-  h2: { fontSize: 18, fontWeight: '800', color: C.pitch, textAlign: 'right' },
+  card: { backgroundColor: C.card, borderRadius: 14, overflow: 'hidden', shadowColor: '#37003c', shadowOpacity: 0.07, shadowRadius: 10, shadowOffset: { width: 0, height: 3 }, elevation: 2 },
+  cardH: { flexDirection: 'row-reverse', justifyContent: 'space-between', alignItems: 'baseline', paddingHorizontal: 16, paddingVertical: 14, borderBottomWidth: 1, borderColor: C.line },
+  h2: { fontSize: 17, fontWeight: '900', color: C.ink, textAlign: 'right', letterSpacing: -0.2 },
   txt: { fontSize: 14, color: C.ink, textAlign: 'right', writingDirection: 'rtl' },
-  muted: { fontSize: 12, color: C.muted },
+  muted: { fontSize: 12, color: C.muted, fontWeight: '600' },
   small: { fontSize: 12, color: C.muted, textAlign: 'right' },
   bold: { fontWeight: '700' },
   num: { fontSize: 14, color: C.ink, fontVariant: ['tabular-nums'] },
@@ -2762,7 +2784,7 @@ const s = StyleSheet.create({
   miniPts: { marginTop: 2, minWidth: 22, paddingHorizontal: 5, height: 16, borderRadius: 8, backgroundColor: C.pitch, alignItems: 'center', justifyContent: 'center' },
   miniPtsT: { color: '#fff', fontSize: 10, fontWeight: '900' },
   fxDay: { fontSize: 13, fontWeight: '900', color: C.pitch, textAlign: 'right', marginTop: 6, paddingHorizontal: 4 },
-  fxCard: { backgroundColor: C.card, borderRadius: 16, paddingVertical: 12, paddingHorizontal: 12, borderWidth: 1, borderColor: C.line },
+  fxCard: { backgroundColor: C.card, borderRadius: 14, paddingVertical: 14, paddingHorizontal: 14, shadowColor: '#37003c', shadowOpacity: 0.07, shadowRadius: 10, shadowOffset: { width: 0, height: 3 }, elevation: 2 },
   fxCardLive: { borderColor: C.pink, borderWidth: 2 },
   fxRow: { flexDirection: 'row-reverse', alignItems: 'center', gap: 8 },
   fxTeam: { flex: 1, flexDirection: 'row-reverse', alignItems: 'center', gap: 8 },
@@ -2798,6 +2820,18 @@ const s = StyleSheet.create({
   hCountDH: { fontSize: 12, fontWeight: '900', color: C.bad },
   accHead: { flexDirection: 'row-reverse', alignItems: 'center', gap: 8, paddingHorizontal: 14, paddingVertical: 14 },
   accBody: { paddingHorizontal: 14, paddingBottom: 14, gap: 6, borderTopWidth: 1, borderColor: C.line, paddingTop: 10 },
+  ph: { marginHorizontal: -14, marginTop: -14, paddingTop: 16, paddingHorizontal: 16 },
+  phTop: { flexDirection: 'row-reverse', alignItems: 'center', gap: 10, paddingBottom: 6 },
+  phBack: { width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(255,255,255,0.14)', alignItems: 'center', justifyContent: 'center' },
+  phBackT: { color: '#fff', fontSize: 18, fontWeight: '900' },
+  phTitle: { color: '#fff', fontSize: 24, fontWeight: '900', textAlign: 'right', letterSpacing: -0.3 },
+  phSub: { color: C.cyan, fontSize: 12, fontWeight: '700', textAlign: 'right', marginTop: 2 },
+  phTabs: { flexDirection: 'row-reverse', marginTop: 6 },
+  phTab: { flex: 1, alignItems: 'center', paddingTop: 10 },
+  phTabT: { color: 'rgba(255,255,255,0.62)', fontSize: 14, fontWeight: '800', paddingBottom: 9 },
+  phTabTOn: { color: '#fff' },
+  phLine: { height: 4, alignSelf: 'stretch', marginHorizontal: 10, borderTopLeftRadius: 4, borderTopRightRadius: 4, backgroundColor: 'transparent' },
+  phLineOn: { backgroundColor: C.neon },
   tTabs: { flexDirection: 'row-reverse', backgroundColor: C.pitch, borderRadius: 14, padding: 4, gap: 4 },
   tTab: { flex: 1, paddingVertical: 8, borderRadius: 10, alignItems: 'center' },
   tTabOn: { backgroundColor: C.neon },
@@ -2812,7 +2846,7 @@ const s = StyleSheet.create({
   tInOut: { flexDirection: 'row-reverse', gap: 8 },
   tIO: { flex: 1, paddingVertical: 9, borderRadius: 12, alignItems: 'center', backgroundColor: '#fff', borderWidth: 1, borderColor: C.line },
   tIOT: { fontSize: 13, fontWeight: '900', color: C.ink },
-  tCard: { backgroundColor: C.card, borderRadius: 16, borderWidth: 1, borderColor: C.line, overflow: 'hidden' },
+  tCard: { backgroundColor: C.card, borderRadius: 14, overflow: 'hidden', shadowColor: '#37003c', shadowOpacity: 0.07, shadowRadius: 10, shadowOffset: { width: 0, height: 3 }, elevation: 2 },
   tRow: { flexDirection: 'row-reverse', alignItems: 'center', gap: 10, paddingVertical: 10, paddingHorizontal: 12, borderBottomWidth: 1, borderColor: C.line },
   tRowMine: { backgroundColor: '#faf5ff' },
   tRank: { width: 18, textAlign: 'center', fontSize: 12, fontWeight: '900', color: C.muted },
@@ -2872,7 +2906,7 @@ const s = StyleSheet.create({
   sortChip: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 999, backgroundColor: '#fff', borderWidth: 1, borderColor: C.line },
   sortChipOn: { backgroundColor: C.pink, borderColor: C.pink },
   sortChipT: { fontSize: 12, fontWeight: '800', color: C.ink },
-  scCard: { flexDirection: 'row-reverse', alignItems: 'center', gap: 10, backgroundColor: C.card, borderRadius: 16, paddingVertical: 10, paddingHorizontal: 10, borderWidth: 1, borderColor: C.line },
+  scCard: { flexDirection: 'row-reverse', alignItems: 'center', gap: 12, backgroundColor: C.card, borderRadius: 14, paddingVertical: 12, paddingHorizontal: 12, borderWidth: 2, borderColor: 'transparent', shadowColor: '#37003c', shadowOpacity: 0.07, shadowRadius: 10, shadowOffset: { width: 0, height: 3 }, elevation: 2 },
   scCardMine: { borderColor: '#953bff', borderWidth: 2, backgroundColor: '#faf5ff' },
   scRank: { width: 22, textAlign: 'center', fontSize: 12, fontWeight: '900', color: C.muted },
   scPhoto: { backgroundColor: '#efe6f3', overflow: 'hidden', alignItems: 'center', justifyContent: 'center' },
@@ -2914,9 +2948,9 @@ const s = StyleSheet.create({
   gridNum: { fontSize: 14, fontWeight: '700', color: C.ink, fontVariant: ['tabular-nums'] },
   gridDim: { fontSize: 13, color: '#c4bcc6' },
   colN: { width: 58, textAlign: 'left' },
-  tr: { flexDirection: 'row-reverse', alignItems: 'center', paddingVertical: 10, paddingHorizontal: 12, borderBottomWidth: 1, borderColor: C.line, gap: 6 },
-  thRow: { paddingVertical: 6, backgroundColor: C.bg },
-  th: { fontSize: 12, color: C.muted, textAlign: 'right', fontWeight: '600' },
+  tr: { flexDirection: 'row-reverse', alignItems: 'center', paddingVertical: 12, paddingHorizontal: 16, borderBottomWidth: 1, borderColor: C.line, gap: 8 },
+  thRow: { paddingVertical: 9, backgroundColor: '#f8f7fa' },
+  th: { fontSize: 11, color: '#8d8292', textAlign: 'right', fontWeight: '800', letterSpacing: 0.3 },
   rk: { width: 26, height: 26, borderRadius: 13, backgroundColor: C.line, alignItems: 'center', justifyContent: 'center' },
   rkT: { fontSize: 12, fontWeight: '800', color: C.pitch },
   row: { flexDirection: 'row-reverse', justifyContent: 'space-between', gap: 12, paddingVertical: 10, paddingHorizontal: 14, borderBottomWidth: 1, borderColor: C.line },
@@ -2989,7 +3023,7 @@ const s = StyleSheet.create({
   sheetStatN: { fontSize: 18, fontWeight: '900', color: C.pitch, fontVariant: ['tabular-nums'] },
   sheetStatL: { fontSize: 11, color: C.muted },
   dgList: { padding: 10, gap: 8 },
-  dgCard: { flexDirection: 'row-reverse', alignItems: 'center', gap: 12, backgroundColor: C.card, borderRadius: 12, padding: 8, paddingLeft: 10, borderWidth: 1, borderColor: C.line, shadowColor: '#37003c', shadowOpacity: 0.06, shadowRadius: 6, shadowOffset: { width: 0, height: 2 }, elevation: 1 },
+  dgCard: { flexDirection: 'row-reverse', alignItems: 'center', gap: 12, backgroundColor: C.card, borderRadius: 14, padding: 10, paddingLeft: 12, shadowColor: '#37003c', shadowOpacity: 0.07, shadowRadius: 10, shadowOffset: { width: 0, height: 3 }, elevation: 2 },
   dgGw: { width: 50, height: 50, borderRadius: 10, backgroundColor: C.pitch, alignItems: 'center', justifyContent: 'center' },
   dgGwL: { color: C.cyan, fontSize: 9, fontWeight: '800', letterSpacing: 1 },
   dgGwN: { color: '#fff', fontSize: 20, fontWeight: '900', marginTop: -2 },
@@ -3000,7 +3034,7 @@ const s = StyleSheet.create({
   dgPts: { minWidth: 52, alignItems: 'center', backgroundColor: '#e9fff4', borderRadius: 10, paddingVertical: 6, paddingHorizontal: 8, borderWidth: 1, borderColor: '#b6f5d4' },
   dgPtsN: { fontSize: 18, fontWeight: '900', color: C.pitch, fontVariant: ['tabular-nums'] },
   dgPtsL: { fontSize: 10, color: C.muted, marginTop: -2 },
-  donkeyRow: { flexDirection: 'row-reverse', alignItems: 'center', gap: 10, backgroundColor: C.card, borderRadius: 14, paddingVertical: 10, paddingHorizontal: 12, shadowColor: '#37003c', shadowOpacity: 0.08, shadowRadius: 8, shadowOffset: { width: 0, height: 2 }, elevation: 2 },
+  donkeyRow: { flexDirection: 'row-reverse', alignItems: 'center', gap: 10, backgroundColor: C.card, borderRadius: 14, paddingVertical: 12, paddingHorizontal: 14, shadowColor: '#37003c', shadowOpacity: 0.07, shadowRadius: 10, shadowOffset: { width: 0, height: 3 }, elevation: 2 },
   donkeyIcon: { width: 40, height: 40, borderRadius: 20, backgroundColor: C.donkeyBg, alignItems: 'center', justifyContent: 'center' },
   donkeyName: { fontSize: 16, fontWeight: '800', color: C.ink, textAlign: 'right' },
   donkeySub: { fontSize: 12, color: C.muted, textAlign: 'right', marginTop: 1 },
@@ -3015,10 +3049,10 @@ const s = StyleSheet.create({
   btn: { backgroundColor: C.pitch, borderRadius: 10, paddingVertical: 13, alignItems: 'center' },
   btnT: { color: '#fff', fontWeight: '800', fontSize: 15 },
   err: { backgroundColor: '#fde6ee', borderRadius: 8, padding: 12 },
-  stats: { flexDirection: 'row-reverse', marginTop: 12 },
+  stats: { flexDirection: 'row-reverse' },
   stat: { flex: 1, alignItems: 'center', paddingVertical: 8 },
-  statN: { fontSize: 18, fontWeight: '800', color: '#fff', fontVariant: ['tabular-nums'] },
-  hero: { backgroundColor: C.pitch, borderRadius: 12, padding: 16, borderBottomWidth: 4, borderColor: C.cyan },
+  statN: { fontSize: 19, fontWeight: '900', color: C.pitch, fontVariant: ['tabular-nums'] },
+  hero: { backgroundColor: C.card, borderRadius: 14, padding: 12, shadowColor: '#37003c', shadowOpacity: 0.07, shadowRadius: 10, shadowOffset: { width: 0, height: 3 }, elevation: 2 },
   heroName: { color: '#fff', fontSize: 22, fontWeight: '900', textAlign: 'right' },
   heroSub: { color: '#d9c7dc', fontSize: 13, textAlign: 'right', marginTop: 2 },
   bars: { flexDirection: 'row', alignItems: 'flex-end', gap: 6, padding: 12, minHeight: 160 },
