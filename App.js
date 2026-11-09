@@ -569,15 +569,17 @@ function GwGrid({ c, data, gw, meId, open, refreshControl }) {
 
 // Kronometre: ch7al ba9i l 7mar l-jawla. L-mouda dyalo katsali m3a 00:00 dyal l-lil li mn b3d
 // akhir match f l-jawla li jaya (b twa9it l-Maghrib).
-function DonkeyTimer({ nextGw }) {
+function DonkeyTimer({ nextGw, onOver }) {
   const [deadline, setDeadline] = useState(undefined);
   const [now, setNow] = useState(Date.now());
   useEffect(() => {
     let alive = true;
+    setDeadline(undefined);
     getJson(`/fixtures/?event=${nextGw}`).then(f => alive && setDeadline(donkeyDeadline(f))).catch(() => alive && setDeadline(null));
     return () => { alive = false; };
   }, [nextGw]);
   const over = deadline != null && now >= deadline;
+  useEffect(() => { if (over && onOver) onOver(nextGw); }, [over, nextGw]);
   useEffect(() => {
     if (deadline == null || over) return;
     const t = setInterval(() => setNow(Date.now()), 1000);
@@ -598,16 +600,22 @@ function DonkeyTimer({ nextGw }) {
 
 function Hmar({ c, open, refreshControl }) {
   const name = id => c.per[id].m.name;
-  const cur = c.byGw[c.byGw.length - 1];
+  const last = c.byGw[c.byGw.length - 1];
+  // L-mouda dyal l-7mar l-9dim salat (00:00 mn b3d akhir match f l-jawla li jat mn b3dou) walakin
+  // FPL mazal ma 3llmatch l-jawla "finished" (kayt-sennaw t-ta2kid dyal l-bonus): l-7mar l-jdid
+  // huwa l-7mar l-mo2a99at dyal l-jawla l-live, w l-kronometre l-jdid kaybda dghya.
+  const [expired, setExpired] = useState(null);
+  const swapped = last && c.liveDonkey && c.liveDonkey.gw === last.gw + 1 && expired === c.liveDonkey.gw;
+  const cur = swapped ? { ...c.liveDonkey, provisional: true } : last;
   const pens = [...c.table].sort((a, b) => b.pen.amount - a.pen.amount || b.donkeys.length - a.donkeys.length);
   const banner = cur ? (
     <View style={s.donkeyRow}>
       <View style={s.donkeyIcon}><Text style={{ fontSize: 22 }}>🐴</Text></View>
       <View style={{ flex: 1 }}>
         <Text style={s.donkeyName} numberOfLines={1}>{cur.ids.map(name).join(' و ')}</Text>
-        <Text style={s.donkeySub}>حمار GW{cur.gw} · {cur.min} pts</Text>
+        <Text style={s.donkeySub}>حمار GW{cur.gw} · {cur.min} pts{cur.provisional ? ' · مؤقت' : ''}</Text>
       </View>
-      {cur.gw < 38 ? <DonkeyTimer nextGw={cur.gw + 1} /> : null}
+      {cur.gw < 38 ? <DonkeyTimer key={cur.gw} nextGw={cur.gw + 1} onOver={setExpired} /> : null}
     </View>
   ) : (
     <Card><Text style={[s.txt, { padding: 16 }]}>حتى جولة ما سالات من بداية الدوري.</Text></Card>
@@ -642,7 +650,7 @@ function Hmar({ c, open, refreshControl }) {
           title: 'الحمير جولة بجولة',
           body: (
             <View style={s.dgList}>
-              {[...c.byGw].reverse().map((b, i) => (
+              {[...(swapped ? [cur] : []), ...[...c.byGw].reverse()].map((b, i) => (
                 <TouchableOpacity key={b.gw} style={s.dgCard} onPress={() => open(b.ids[0])} activeOpacity={0.8}>
                   <View style={[s.dgGw, i === 0 && { backgroundColor: C.pink }]}>
                     <Text style={s.dgGwL}>GW</Text>
@@ -653,6 +661,7 @@ function Hmar({ c, open, refreshControl }) {
                     <View style={{ flexDirection: 'row-reverse', alignItems: 'center', gap: 6 }}>
                       <Text style={s.dgTeam} numberOfLines={1}>{b.ids.map(id => c.per[id].m.team).join('، ')}</Text>
                       {b.tie ? <View style={s.dgTie}><Text style={s.dgTieT}>تعادل</Text></View> : null}
+                      {b.provisional ? <View style={s.dgTie}><Text style={s.dgTieT}>مؤقت</Text></View> : null}
                     </View>
                   </View>
                   <View style={s.dgPts}>
