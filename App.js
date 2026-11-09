@@ -626,7 +626,7 @@ function TeamBadge({ info }) {
   return <Image source={{ uri: BADGE(info.code) }} style={s.fxBadge} resizeMode="contain" onError={() => setBad(true)} accessibilityLabel={info.n} />;
 }
 // Soura sghira dyal joueur (b7al FPL) m3a C/V w l-bank b chfafiya.
-function MiniFace({ el, pick, data }) {
+function MiniFace({ el, pick, data, pts }) {
   const pl = data.players[el] || {};
   const [i, setI] = useState(0);
   const urls = pl.c ? photoUrls(pl.c) : [];
@@ -641,6 +641,7 @@ function MiniFace({ el, pick, data }) {
         {badge ? <View style={s.miniBadge}><Text style={s.miniBadgeT}>{badge}</Text></View> : null}
       </View>
       <Text style={s.miniName} numberOfLines={1}>{pl.n || '?'}</Text>
+      {pts != null ? <View style={[s.miniPts, pts >= 6 && { backgroundColor: C.good }, pts <= 1 && { backgroundColor: C.muted }]}><Text style={s.miniPtsT}>{pts}</Text></View> : null}
     </View>
   );
 }
@@ -665,6 +666,18 @@ function Matches({ data, meId, refreshControl }) {
   const list = Array.from({ length: 38 }, (_, i) => i + 1);
   const [gw, setGw] = useState(data.current || 1);
   const [mine, setMine] = useState({});
+  const [live, setLive] = useState(null);
+  useEffect(() => { setLive(null); }, [gw]);
+  // N-n9at dyal kol joueur f kol match (mn explain dyal /event/{gw}/live/) + bonus mo2a99at ila mazal.
+  const fxPts = useMemo(() => {
+    const out = {};
+    for (const el of (live && live.elements) || []) {
+      for (const ex of el.explain || []) {
+        (out[ex.fixture] = out[ex.fixture] || {})[el.id] = ex.stats.reduce((t, st) => t + (st.points || 0), 0);
+      }
+    }
+    return out;
+  }, [live]);
   useEffect(() => {
     let alive = true;
     setMine({});
@@ -679,6 +692,7 @@ function Matches({ data, meId, refreshControl }) {
     let alive = true;
     setErr(false);
     getJson(`/fixtures/?event=${gw}`).then(f => alive && setFx(f)).catch(() => alive && setErr(true));
+    if (gw <= (data.current || 0)) getJson(`/event/${gw}/live/`).then(l => alive && setLive(l)).catch(() => {});
     return () => { alive = false; };
   }, [gw, data.fetchedAt]);
   useEffect(() => { setFx(null); setOpenId(null); }, [gw]);
@@ -686,7 +700,10 @@ function Matches({ data, meId, refreshControl }) {
   const anyLive = (fx || []).some(f => f.started && !f.finished && !f.finished_provisional);
   useEffect(() => {
     if (!anyLive) return;
-    const t = setInterval(() => getJson(`/fixtures/?event=${gw}`).then(setFx).catch(() => {}), 60000);
+    const t = setInterval(() => {
+      getJson(`/fixtures/?event=${gw}`).then(setFx).catch(() => {});
+      getJson(`/event/${gw}/live/`).then(setLive).catch(() => {});
+    }, 60000);
     return () => clearInterval(t);
   }, [anyLive, gw]);
 
@@ -766,6 +783,13 @@ function Matches({ data, meId, refreshControl }) {
     );
   };
 
+  const playerPts = (f, el) => {
+    if (!f.started || !live) return null;
+    const base = (fxPts[f.id] || {})[el] || 0;
+    const conf = (f.stats || []).find(x => x.identifier === 'bonus');
+    const prov = conf && (conf.h.length || conf.a.length) ? 0 : provisionalBonus([f])[el] || 0;
+    return base + prov;
+  };
   const card = f => {
     const live = f.started && !f.finished && !f.finished_provisional;
     const done = f.finished || f.finished_provisional;
@@ -796,9 +820,9 @@ function Matches({ data, meId, refreshControl }) {
         </View>
         {myTeam(f.team_h).length || myTeam(f.team_a).length ? (
           <View style={s.fxMinis}>
-            <View style={[s.fxMiniSide, { flexDirection: 'row-reverse' }]}>{myTeam(f.team_h).map(x => <MiniFace key={x.element} el={x.element} pick={x} data={data} />)}</View>
+            <View style={[s.fxMiniSide, { flexDirection: 'row-reverse' }]}>{myTeam(f.team_h).map(x => <MiniFace key={x.element} el={x.element} pick={x} data={data} pts={playerPts(f, x.element)} />)}</View>
             <View style={{ width: 74 }} />
-            <View style={[s.fxMiniSide, { flexDirection: 'row' }]}>{myTeam(f.team_a).map(x => <MiniFace key={x.element} el={x.element} pick={x} data={data} />)}</View>
+            <View style={[s.fxMiniSide, { flexDirection: 'row' }]}>{myTeam(f.team_a).map(x => <MiniFace key={x.element} el={x.element} pick={x} data={data} pts={playerPts(f, x.element)} />)}</View>
           </View>
         ) : null}
         {f.started ? <Text style={s.fxMore}>{isOpen ? '▴ خبي التفاصيل' : '▾ التفاصيل والبونيس'}</Text> : null}
@@ -2479,6 +2503,8 @@ const s = StyleSheet.create({
   miniName: { fontSize: 9, fontWeight: '800', color: '#953bff', marginTop: 1, maxWidth: 44 },
   fxMine: { backgroundColor: '#f3e8ff', borderRadius: 6, paddingHorizontal: 4 },
   fxMineT: { color: '#7a1fe0', fontWeight: '900' },
+  miniPts: { marginTop: 2, minWidth: 22, paddingHorizontal: 5, height: 16, borderRadius: 8, backgroundColor: C.pitch, alignItems: 'center', justifyContent: 'center' },
+  miniPtsT: { color: '#fff', fontSize: 10, fontWeight: '900' },
   fxDay: { fontSize: 13, fontWeight: '900', color: C.pitch, textAlign: 'right', marginTop: 6, paddingHorizontal: 4 },
   fxCard: { backgroundColor: C.card, borderRadius: 16, paddingVertical: 12, paddingHorizontal: 12, borderWidth: 1, borderColor: C.line },
   fxCardLive: { borderColor: C.pink, borderWidth: 2 },
