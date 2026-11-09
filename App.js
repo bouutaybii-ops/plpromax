@@ -911,7 +911,10 @@ function Scout({ c, data, meId, refreshControl }) {
   const rows = useMemo(() => Object.entries(players).filter(([, pl]) => pl.t !== 5)
     .map(([id, pl]) => ({ id: +id, ...pl, sel: +pl.sel || 0, form: +pl.form || 0, ppg: +pl.ppg || 0 })), [data]);
   const needle = q.trim().toLowerCase();
-  const sortDef = SCOUT_SORTS.find(x => x[0] === sortK);
+  // L-ar9am dyal transferts (FPL) kayt3awdo mn 0 m3a kol deadline: daba rahom dyal l-jawla l-jaya.
+  const nextGw = data.nextDeadline ? (data.current || 0) + 1 : null;
+  const sortDef0 = SCOUT_SORTS.find(x => x[0] === sortK);
+  const sortDef = ['tin', 'tout'].includes(sortK) && nextGw ? [sortDef0[0], `${sortDef0[1]} GW${nextGw}`, sortDef0[2]] : sortDef0;
   const list = rows
     .filter(r => (!pos || r.t === pos) && (!onlyMine || mine[r.id]) && (!needle || (r.n + ' ' + r.full).toLowerCase().includes(needle) || teamS(r.team).toLowerCase() === needle))
     .sort((a, b) => (b[sortK] || 0) - (a[sortK] || 0) || b.total - a.total);
@@ -992,7 +995,7 @@ function Scout({ c, data, meId, refreshControl }) {
         </ScrollView>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.scChips} style={{ direction: 'rtl', flexGrow: 0 }}>
           <Text style={[s.small, { alignSelf: 'center' }]}>رتّب ب:</Text>
-          {SCOUT_SORTS.map(([k, l]) => (
+          {SCOUT_SORTS.map(([k, l0]) => [k, ['tin', 'tout'].includes(k) && nextGw ? `${l0} GW${nextGw}` : l0]).map(([k, l]) => (
             <TouchableOpacity key={k} onPress={() => reset(setSortK)(k)} style={[s.sortChip, sortK === k && s.sortChipOn]}>
               <Text style={[s.sortChipT, sortK === k && { color: '#fff' }]}>{l}</Text>
             </TouchableOpacity>
@@ -1040,6 +1043,9 @@ function ScoutTransfers({ c, data, teamS, openPlayer, refreshControl, mine = {} 
   const rise = global.filter(p => p.cc > 0).sort((a, b) => b.cc - a.cc || b.tin - a.tin).slice(0, 8);
   const fall = global.filter(p => p.cc < 0).sort((a, b) => a.cc - b.cc || b.tout - a.tout).slice(0, 8);
 
+  const nextGw = data.nextDeadline ? (data.current || 0) + 1 : null;
+  const gwTag = nextGw ? `GW${nextGw}` : 'هاد الجولة';
+  const hidden = nextGw && data.nextDeadline > Date.now();
   const Line = ({ el, right, sub, color }) => (
     <TouchableOpacity onPress={() => openPlayer(el)} style={[s.scLine, mine[el] && { backgroundColor: '#f3e8ff' }]}>
       <PlayerPhoto pl={players[el] || {}} size={30} />
@@ -1055,6 +1061,28 @@ function ScoutTransfers({ c, data, teamS, openPlayer, refreshControl, mine = {} 
       refreshControl={refreshControl}
       sections={[
         {
+          title: `FPL كاملة · ${gwTag}`, sub: 'الانتقالات اللي داروها دابا',
+          body: (
+            <View style={{ paddingBottom: 8 }}>
+              <Text style={s.scHead}>📥 الأكثر شراء</Text>
+              {top(p => p.tin).map(p => <Line key={'gi' + p.el} el={p.el} right={fmtK(p.tin)} sub={iso2('£' + p.price.toFixed(1)) + ' · ' + p.sel + '%'} color={C.good} />)}
+              <Text style={s.scHead}>📤 الأكثر بيع</Text>
+              {top(p => p.tout).map(p => <Line key={'go' + p.el} el={p.el} right={fmtK(p.tout)} sub={iso2('£' + p.price.toFixed(1)) + ' · ' + p.sel + '%'} color={C.bad} />)}
+            </View>
+          ),
+        },
+        {
+          title: 'تبدّل السعر', sub: `من بعد آخر deadline · ${gwTag}`,
+          body: (
+            <View style={{ paddingBottom: 8 }}>
+              <Text style={s.scHead}>📈 طلعو</Text>
+              {rise.length ? rise.map(p => <Line key={'r' + p.el} el={p.el} right={'+' + p.cc.toFixed(1)} sub={iso2('£' + p.price.toFixed(1))} color={C.good} />) : <Text style={[s.small, { textAlign: 'center' }]}>والو</Text>}
+              <Text style={s.scHead}>📉 هبطو</Text>
+              {fall.length ? fall.map(p => <Line key={'f' + p.el} el={p.el} right={p.cc.toFixed(1)} sub={iso2('£' + p.price.toFixed(1))} color={C.bad} />) : <Text style={[s.small, { textAlign: 'center' }]}>والو</Text>}
+            </View>
+          ),
+        },
+        {
           title: 'انتقالات الليگ', sub: gw ? `GW${gw} · ${now.length} انتقال` : '',
           body: !tr ? <ActivityIndicator color={C.pink} style={{ padding: 30 }} /> : (
             <View style={{ paddingBottom: 8 }}>
@@ -1065,6 +1093,11 @@ function ScoutTransfers({ c, data, teamS, openPlayer, refreshControl, mine = {} 
                   </TouchableOpacity>
                 ))}
               </View>
+              {hidden ? (
+                <View style={s.scLock}>
+                  <Text style={s.scLockT}>🔒 التبديلات ديال GW{nextGw} ف الليگ FPL كتخبيهم حتى يدوز الـ deadline ({formatMoroccoDate(data.nextDeadline)}). من بعد كيبانو هنا بوحدهم.</Text>
+                </View>
+              ) : null}
               {now.length ? (
                 <>
                   <Text style={s.scHead}>📥 أكثر لاعبين جابوهم</Text>
@@ -1090,28 +1123,6 @@ function ScoutTransfers({ c, data, teamS, openPlayer, refreshControl, mine = {} 
             </View>
           )),
         } : null,
-        {
-          title: 'FPL كاملة · هاد الجولة', sub: 'الأكثر شراء و بيع فالعالم',
-          body: (
-            <View style={{ paddingBottom: 8 }}>
-              <Text style={s.scHead}>📥 الأكثر شراء</Text>
-              {top(p => p.tin).map(p => <Line key={'gi' + p.el} el={p.el} right={fmtK(p.tin)} sub={iso2('£' + p.price.toFixed(1)) + ' · ' + p.sel + '%'} color={C.good} />)}
-              <Text style={s.scHead}>📤 الأكثر بيع</Text>
-              {top(p => p.tout).map(p => <Line key={'go' + p.el} el={p.el} right={fmtK(p.tout)} sub={iso2('£' + p.price.toFixed(1)) + ' · ' + p.sel + '%'} color={C.bad} />)}
-            </View>
-          ),
-        },
-        {
-          title: 'تبدّل السعر', sub: 'هاد الجولة',
-          body: (
-            <View style={{ paddingBottom: 8 }}>
-              <Text style={s.scHead}>📈 طلعو</Text>
-              {rise.length ? rise.map(p => <Line key={'r' + p.el} el={p.el} right={'+' + p.cc.toFixed(1)} sub={iso2('£' + p.price.toFixed(1))} color={C.good} />) : <Text style={[s.small, { textAlign: 'center' }]}>والو</Text>}
-              <Text style={s.scHead}>📉 هبطو</Text>
-              {fall.length ? fall.map(p => <Line key={'f' + p.el} el={p.el} right={p.cc.toFixed(1)} sub={iso2('£' + p.price.toFixed(1))} color={C.bad} />) : <Text style={[s.small, { textAlign: 'center' }]}>والو</Text>}
-            </View>
-          ),
-        },
       ].filter(Boolean)}
     />
   );
@@ -2516,6 +2527,8 @@ const s = StyleSheet.create({
   fxBpsBar: { width: 70, height: 6, borderRadius: 3, backgroundColor: C.bg, overflow: 'hidden', flexDirection: 'row-reverse' },
   fxBpsFill: { height: 6, backgroundColor: '#953bff', borderRadius: 3 },
   scBar: { gap: 8 },
+  scLock: { marginHorizontal: 12, marginBottom: 6, padding: 10, borderRadius: 12, backgroundColor: '#fff4e5', borderWidth: 1, borderColor: '#ffd8a3' },
+  scLockT: { fontSize: 12, color: '#9a5b00', fontWeight: '700', textAlign: 'right', lineHeight: 18 },
   scChips: { gap: 6, flexDirection: 'row', paddingVertical: 2 },
   sortChip: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 999, backgroundColor: '#fff', borderWidth: 1, borderColor: C.line },
   sortChipOn: { backgroundColor: C.pink, borderColor: C.pink },
