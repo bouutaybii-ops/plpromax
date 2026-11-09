@@ -3,7 +3,7 @@
 import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, TextInput, RefreshControl, Image,
-  ActivityIndicator, StyleSheet, StatusBar, Platform, Modal, AppState,
+  ActivityIndicator, StyleSheet, StatusBar, Platform, Modal, AppState, Switch,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -881,12 +881,72 @@ function PlayerPhoto({ pl, size = 46 }) {
   );
 }
 
+const SCOUT_DEFAULT = { pos: 0, team: 0, minP: 3.5, maxP: 16, mine: false, avail: false, league: false, minSel: 0, minMin: 0 };
+// Liste déroulante: zr kayban fih l-ikhtiyar, w kayt7el lista f modal.
+function Dropdown({ label, value, options, onChange, style }) {
+  const [open, setOpen] = useState(false);
+  const cur = options.find(o => o[0] === value);
+  return (
+    <>
+      <TouchableOpacity onPress={() => setOpen(true)} style={[s.dd, style]}>
+        {label ? <Text style={s.ddL}>{label}:</Text> : null}
+        <Text style={s.ddV} numberOfLines={1}>{cur ? cur[1] : '–'}</Text>
+        <Text style={s.ddCaret}>▾</Text>
+      </TouchableOpacity>
+      <Modal visible={open} transparent animationType="fade" onRequestClose={() => setOpen(false)}>
+        <TouchableOpacity style={s.modalBg} activeOpacity={1} onPress={() => setOpen(false)}>
+          <View style={s.modalBox}>
+            {label ? <Text style={[s.h2, { padding: 14, textAlign: 'center' }]}>{label}</Text> : null}
+            <ScrollView style={{ maxHeight: 420 }}>
+              {options.map(([v, l]) => (
+                <TouchableOpacity key={v} onPress={() => { onChange(v); setOpen(false); }} style={[s.modalItem, v === value && { backgroundColor: C.me }]}>
+                  <Text style={[s.txt, { textAlign: 'center' }, v === value && { color: C.pink, fontWeight: '800' }]}>{v === value ? '✓ ' : ''}{l}</Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+        </TouchableOpacity>
+      </Modal>
+    </>
+  );
+}
+// Spinner: − 9ima +
+function Stepper({ label, value, step, min, max, fmt, onChange }) {
+  const set = v => onChange(Math.round(Math.min(max, Math.max(min, v)) * 10) / 10);
+  return (
+    <View style={s.stepWrap}>
+      {label ? <Text style={s.stepL}>{label}</Text> : null}
+      <View style={s.step}>
+        <TouchableOpacity onPress={() => set(value + step)} disabled={value >= max} style={[s.stepBtn, value >= max && { opacity: 0.3 }]}><Text style={s.stepBtnT}>+</Text></TouchableOpacity>
+        <Text style={s.stepV}>{fmt(value)}</Text>
+        <TouchableOpacity onPress={() => set(value - step)} disabled={value <= min} style={[s.stepBtn, value <= min && { opacity: 0.3 }]}><Text style={s.stepBtnT}>−</Text></TouchableOpacity>
+      </View>
+    </View>
+  );
+}
+function ToggleRow({ label, value, onChange, last }) {
+  return (
+    <View style={[s.togRow, last && { borderBottomWidth: 0 }]}>
+      <Text style={[s.txt, { flex: 1, textAlign: 'right' }]}>{label}</Text>
+      <Switch value={value} onValueChange={onChange} trackColor={{ false: C.line, true: '#953bff' }} thumbColor="#fff" activeThumbColor="#fff" />
+    </View>
+  );
+}
+function FilterTag({ t, onX }) {
+  return (
+    <TouchableOpacity onPress={onX} style={s.fTag}>
+      <Text style={s.fTagT}>{t}  ✕</Text>
+    </TouchableOpacity>
+  );
+}
+
 function Scout({ c, data, meId, refreshControl }) {
   const [view, setView] = useState('players');
-  const [pos, setPos] = useState(0);
-  const [onlyMine, setOnlyMine] = useState(false);
+  const [f, setF] = useState(SCOUT_DEFAULT);
+  const [draft, setDraft] = useState(null);
   const [q, setQ] = useState('');
   const [sortK, setSortK] = useState('total');
+  const [sortDir, setSortDir] = useState(-1);
   const [limit, setLimit] = useState(40);
   const [sel, setSel] = useState(null);
   const [ctx, setCtx] = useState(null);
@@ -916,8 +976,13 @@ function Scout({ c, data, meId, refreshControl }) {
   const sortDef0 = SCOUT_SORTS.find(x => x[0] === sortK);
   const sortDef = ['tin', 'tout'].includes(sortK) && nextGw ? [sortDef0[0], `${sortDef0[1]} GW${nextGw}`, sortDef0[2]] : sortDef0;
   const list = rows
-    .filter(r => (!pos || r.t === pos) && (!onlyMine || mine[r.id]) && (!needle || (r.n + ' ' + r.full).toLowerCase().includes(needle) || teamS(r.team).toLowerCase() === needle))
-    .sort((a, b) => (b[sortK] || 0) - (a[sortK] || 0) || b.total - a.total);
+    .filter(r => (!f.pos || r.t === f.pos) && (!f.team || r.team === f.team) && r.price >= f.minP && r.price <= f.maxP
+      && (!f.mine || mine[r.id]) && (!f.avail || !r.st || r.st === 'a') && (!f.league || own[r.id]) && r.sel >= f.minSel && (r.min || 0) >= f.minMin
+      && (!needle || (r.n + ' ' + r.full).toLowerCase().includes(needle) || teamS(r.team).toLowerCase() === needle))
+    .sort((a, b) => sortDir * ((a[sortK] || 0) - (b[sortK] || 0)) || b.total - a.total);
+  const active = Object.keys(SCOUT_DEFAULT).filter(k => f[k] !== SCOUT_DEFAULT[k]).length;
+  const teamsList = Object.entries(data.teamInfo || {}).map(([id, t]) => [+id, t.n]).sort((a, b) => a[1].localeCompare(b[1]));
+  const sortOpts = SCOUT_SORTS.map(([k, l0]) => [k, ['tin', 'tout'].includes(k) && nextGw ? `${l0} GW${nextGw}` : l0]);
   const shown = list.slice(0, limit);
   const reset = f => v => { f(v); setLimit(40); };
 
@@ -981,26 +1046,33 @@ function Scout({ c, data, meId, refreshControl }) {
   return (
     <View style={s.fixedPage}>
       {Seg}
-      <View style={s.scBar}>
-        <TextInput value={q} onChangeText={reset(setQ)} placeholder="🔎 قلب على لاعب ولا فريق (ARS, LIV…)" placeholderTextColor={C.muted} style={s.search} autoCorrect={false} autoCapitalize="none" />
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.scChips} style={{ direction: 'rtl', flexGrow: 0 }}>
-          <TouchableOpacity onPress={() => { setOnlyMine(v => !v); setLimit(40); }} style={[s.chipBtn, onlyMine && { backgroundColor: '#953bff', borderColor: '#953bff' }]}>
-            <Text style={[s.chipT, onlyMine && { color: '#fff' }]}>✓ ديالي</Text>
-          </TouchableOpacity>
-          {[[0, 'الكل'], [1, 'GKP'], [2, 'DEF'], [3, 'MID'], [4, 'FWD']].map(([k, l]) => (
-            <TouchableOpacity key={k} onPress={() => reset(setPos)(k)} style={[s.chipBtn, pos === k && s.chipOn]}>
-              <Text style={[s.chipT, pos === k && { color: '#fff' }]}>{l}</Text>
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.scChips} style={{ direction: 'rtl', flexGrow: 0 }}>
-          <Text style={[s.small, { alignSelf: 'center' }]}>رتّب ب:</Text>
-          {SCOUT_SORTS.map(([k, l0]) => [k, ['tin', 'tout'].includes(k) && nextGw ? `${l0} GW${nextGw}` : l0]).map(([k, l]) => (
-            <TouchableOpacity key={k} onPress={() => reset(setSortK)(k)} style={[s.sortChip, sortK === k && s.sortChipOn]}>
-              <Text style={[s.sortChipT, sortK === k && { color: '#fff' }]}>{l}</Text>
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
+      <View style={s.fBar}>
+        <View style={s.fSearchWrap}>
+          <Text style={{ fontSize: 14 }}>🔎</Text>
+          <TextInput value={q} onChangeText={reset(setQ)} placeholder="قلب على لاعب…" placeholderTextColor={C.muted} style={s.fSearch} autoCorrect={false} autoCapitalize="none" />
+          {q ? <TouchableOpacity onPress={() => reset(setQ)('')}><Text style={s.fClear}>✕</Text></TouchableOpacity> : null}
+        </View>
+        <TouchableOpacity onPress={() => setDraft(f)} style={s.fIconBtn} accessibilityLabel="الفيلترز">
+          <Text style={s.fIcon}>⚙️</Text>
+          {active ? <View style={s.fBadge}><Text style={s.fBadgeT}>{active}</Text></View> : null}
+        </TouchableOpacity>
+      </View>
+      <View style={s.fSortRow}>
+        <Dropdown label="رتّب ب" value={sortK} options={sortOpts} onChange={reset(setSortK)} style={{ flex: 1 }} />
+        <TouchableOpacity onPress={() => { setSortDir(d => -d); setLimit(40); }} style={s.fDirBtn} accessibilityLabel="قلب الترتيب">
+          <Text style={s.fDirT}>{sortDir < 0 ? '▼ من الكبير' : '▲ من الصغير'}</Text>
+        </TouchableOpacity>
+      </View>
+      <View style={s.fSummary}>
+        <Text style={s.fSummaryN}>{list.length} لاعب</Text>
+        {f.pos ? <FilterTag t={POS_TAG[f.pos][0]} onX={() => setF({ ...f, pos: 0 })} /> : null}
+        {f.team ? <FilterTag t={teamS(f.team)} onX={() => setF({ ...f, team: 0 })} /> : null}
+        {f.minP !== SCOUT_DEFAULT.minP || f.maxP !== SCOUT_DEFAULT.maxP ? <FilterTag t={`£${f.minP}–${f.maxP}`} onX={() => setF({ ...f, minP: SCOUT_DEFAULT.minP, maxP: SCOUT_DEFAULT.maxP })} /> : null}
+        {f.mine ? <FilterTag t="✓ ديالي" onX={() => setF({ ...f, mine: false })} /> : null}
+        {f.avail ? <FilterTag t="متاحين" onX={() => setF({ ...f, avail: false })} /> : null}
+        {f.league ? <FilterTag t="👥 الليگ" onX={() => setF({ ...f, league: false })} /> : null}
+        {f.minSel ? <FilterTag t={`≥${f.minSel}%`} onX={() => setF({ ...f, minSel: 0 })} /> : null}
+        {f.minMin ? <FilterTag t={`≥${f.minMin}د`} onX={() => setF({ ...f, minMin: 0 })} /> : null}
       </View>
       <ScrollView style={{ flex: 1 }} contentContainerStyle={{ gap: 8, paddingBottom: 24 }} refreshControl={refreshControl}>
         {shown.map(card)}
@@ -1012,6 +1084,60 @@ function Scout({ c, data, meId, refreshControl }) {
         ) : null}
       </ScrollView>
       {sheet}
+      {draft ? (
+        <Modal visible transparent animationType="slide" onRequestClose={() => setDraft(null)}>
+          <TouchableOpacity activeOpacity={1} style={s.sheetShade} onPress={() => setDraft(null)}>
+            <TouchableOpacity activeOpacity={1} style={s.fSheet} onPress={() => {}}>
+              <View style={s.fGrab} />
+              <View style={{ flexDirection: 'row-reverse', alignItems: 'center' }}>
+                <Text style={[s.h2, { flex: 1, textAlign: 'right' }]}>الفيلترز</Text>
+                <TouchableOpacity onPress={() => setDraft(SCOUT_DEFAULT)}><Text style={s.fReset}>إعادة الضبط</Text></TouchableOpacity>
+              </View>
+              <ScrollView style={{ maxHeight: 520 }} contentContainerStyle={{ gap: 16, paddingBottom: 10 }}>
+                <View style={{ gap: 8 }}>
+                  <Text style={s.fLabel}>المركز</Text>
+                  <View style={s.fSeg}>
+                    {[[0, 'الكل'], [1, 'GKP'], [2, 'DEF'], [3, 'MID'], [4, 'FWD']].map(([k, l]) => (
+                      <TouchableOpacity key={k} onPress={() => setDraft({ ...draft, pos: k })} style={[s.fSegBtn, draft.pos === k && { backgroundColor: k ? POS_TAG[k][1] : C.pitch }]}>
+                        <Text style={[s.fSegT, draft.pos === k && { color: k ? POS_TAG[k][2] : '#fff' }]}>{l}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </View>
+                <View style={{ gap: 8 }}>
+                  <Text style={s.fLabel}>الفريق</Text>
+                  <Dropdown value={draft.team} options={[[0, 'كاع الفرق'], ...teamsList]} onChange={v => setDraft({ ...draft, team: v })} />
+                </View>
+                <View style={{ gap: 8 }}>
+                  <Text style={s.fLabel}>السعر</Text>
+                  <View style={{ flexDirection: 'row-reverse', gap: 10 }}>
+                    <Stepper label="من" value={draft.minP} step={0.5} min={3.5} max={draft.maxP} fmt={v => '£' + v.toFixed(1)} onChange={v => setDraft({ ...draft, minP: v })} />
+                    <Stepper label="حتى" value={draft.maxP} step={0.5} min={draft.minP} max={16} fmt={v => '£' + v.toFixed(1)} onChange={v => setDraft({ ...draft, maxP: v })} />
+                  </View>
+                </View>
+                <View style={{ flexDirection: 'row-reverse', gap: 10 }}>
+                  <View style={{ flex: 1, gap: 8 }}>
+                    <Text style={s.fLabel}>الامتلاك على الأقل</Text>
+                    <Stepper value={draft.minSel} step={5} min={0} max={80} fmt={v => v + '%'} onChange={v => setDraft({ ...draft, minSel: v })} />
+                  </View>
+                  <View style={{ flex: 1, gap: 8 }}>
+                    <Text style={s.fLabel}>الدقايق على الأقل</Text>
+                    <Stepper value={draft.minMin} step={90} min={0} max={1800} fmt={v => String(v)} onChange={v => setDraft({ ...draft, minMin: v })} />
+                  </View>
+                </View>
+                <View style={s.fToggles}>
+                  <ToggleRow label="✓ غير اللاعبين ديالي" value={draft.mine} onChange={v => setDraft({ ...draft, mine: v })} />
+                  <ToggleRow label="👥 غير اللي عند شي واحد ف الليگ" value={draft.league} onChange={v => setDraft({ ...draft, league: v })} />
+                  <ToggleRow label="🩺 غير المتاحين (بلا إصابة ولا توقيف)" value={draft.avail} onChange={v => setDraft({ ...draft, avail: v })} last />
+                </View>
+              </ScrollView>
+              <TouchableOpacity onPress={() => { setF(draft); setDraft(null); setLimit(40); }} style={s.fApply}>
+                <Text style={s.fApplyT}>طبّق الفيلترز</Text>
+              </TouchableOpacity>
+            </TouchableOpacity>
+          </TouchableOpacity>
+        </Modal>
+      ) : null}
     </View>
   );
 }
@@ -2658,6 +2784,42 @@ const s = StyleSheet.create({
   tSideN: { fontSize: 12, fontWeight: '900', textAlign: 'right' },
   tSideP: { fontSize: 10, color: C.muted, textAlign: 'right' },
   tArrow: { fontSize: 14, color: C.muted, fontWeight: '900' },
+  fBar: { flexDirection: 'row-reverse', gap: 8, alignItems: 'center' },
+  fSearchWrap: { flex: 1, flexDirection: 'row-reverse', alignItems: 'center', gap: 8, backgroundColor: '#fff', borderRadius: 14, paddingHorizontal: 12, borderWidth: 1, borderColor: C.line, height: 46 },
+  fSearch: { flex: 1, fontSize: 15, color: C.ink, textAlign: 'right', height: 44, outlineStyle: 'none' },
+  fClear: { fontSize: 14, color: C.muted, fontWeight: '900', padding: 4 },
+  fIconBtn: { width: 46, height: 46, borderRadius: 14, backgroundColor: C.pitch, alignItems: 'center', justifyContent: 'center' },
+  fIcon: { fontSize: 20 },
+  fBadge: { position: 'absolute', top: -5, left: -5, minWidth: 20, height: 20, borderRadius: 10, backgroundColor: C.pink, alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: C.bg },
+  fBadgeT: { color: '#fff', fontSize: 10, fontWeight: '900' },
+  fSortRow: { flexDirection: 'row-reverse', gap: 8 },
+  fDirBtn: { borderRadius: 12, backgroundColor: '#fff', borderWidth: 1, borderColor: C.line, paddingHorizontal: 12, justifyContent: 'center' },
+  fDirT: { fontSize: 12, fontWeight: '900', color: C.pink },
+  fSummary: { flexDirection: 'row-reverse', alignItems: 'center', gap: 6, flexWrap: 'wrap' },
+  fSummaryN: { fontSize: 13, fontWeight: '900', color: C.pitch },
+  fTag: { backgroundColor: '#f3e8ff', borderRadius: 999, paddingHorizontal: 10, paddingVertical: 3 },
+  fTagT: { fontSize: 11, fontWeight: '800', color: '#7a1fe0' },
+  dd: { flexDirection: 'row-reverse', alignItems: 'center', gap: 6, backgroundColor: '#fff', borderRadius: 12, borderWidth: 1, borderColor: C.line, paddingHorizontal: 12, height: 42 },
+  ddL: { fontSize: 12, color: C.muted, fontWeight: '700' },
+  ddV: { flex: 1, fontSize: 14, color: C.ink, fontWeight: '900', textAlign: 'right' },
+  ddCaret: { fontSize: 14, color: C.pink, fontWeight: '900' },
+  fSheet: { backgroundColor: C.bg, borderTopLeftRadius: 22, borderTopRightRadius: 22, padding: 16, gap: 12, paddingBottom: 24 },
+  fGrab: { alignSelf: 'center', width: 44, height: 5, borderRadius: 3, backgroundColor: '#d4cbd6' },
+  fReset: { color: C.pink, fontWeight: '800', fontSize: 13 },
+  fLabel: { fontSize: 13, fontWeight: '900', color: C.pitch, textAlign: 'right' },
+  fSeg: { flexDirection: 'row-reverse', backgroundColor: '#fff', borderRadius: 12, padding: 3, gap: 3, borderWidth: 1, borderColor: C.line },
+  fSegBtn: { flex: 1, paddingVertical: 8, borderRadius: 9, alignItems: 'center' },
+  fSegT: { fontSize: 12, fontWeight: '900', color: C.muted },
+  stepWrap: { flex: 1, gap: 4 },
+  stepL: { fontSize: 11, color: C.muted, textAlign: 'right', fontWeight: '700' },
+  step: { flexDirection: 'row-reverse', alignItems: 'center', backgroundColor: '#fff', borderRadius: 12, borderWidth: 1, borderColor: C.line, overflow: 'hidden', height: 42 },
+  stepBtn: { width: 40, height: 42, alignItems: 'center', justifyContent: 'center', backgroundColor: '#f6f2f7' },
+  stepBtnT: { fontSize: 20, fontWeight: '900', color: C.pitch },
+  stepV: { flex: 1, textAlign: 'center', fontSize: 15, fontWeight: '900', color: C.ink, fontVariant: ['tabular-nums'], writingDirection: 'ltr' },
+  fToggles: { backgroundColor: '#fff', borderRadius: 14, borderWidth: 1, borderColor: C.line, paddingHorizontal: 12 },
+  togRow: { flexDirection: 'row-reverse', alignItems: 'center', gap: 10, paddingVertical: 10, borderBottomWidth: 1, borderColor: C.line },
+  fApply: { backgroundColor: C.pink, borderRadius: 14, paddingVertical: 14, alignItems: 'center' },
+  fApplyT: { color: '#fff', fontSize: 15, fontWeight: '900' },
   scBar: { gap: 8 },
   scLock: { marginHorizontal: 12, marginBottom: 6, padding: 10, borderRadius: 12, backgroundColor: '#fff4e5', borderWidth: 1, borderColor: '#ffd8a3' },
   scLockT: { fontSize: 12, color: '#9a5b00', fontWeight: '700', textAlign: 'right', lineHeight: 18 },
