@@ -1036,13 +1036,31 @@ function Stats({ c, data, meId, open, refreshControl }) {
           })(),
         },
         {
-          title: 'الانتظام', sub: 'المعدل، التذبذب (σ)، و شحال من جولة فوق المعدل',
+          title: 'الحمير 🐴', sub: 'شحال من مرة كل واحد كان حمار الجولة',
+          body: (() => {
+            const rows = c.table.filter(r => r.donkeys.length).map(r => ({
+              id: r.m.id, label: first(r.m.id), value: r.donkeys.length,
+              sub: 'GW ' + [...r.donkeys].sort((a, b) => a - b).join('، ') + ` · ${r.pen.amount} DH`,
+              display: '🐴 ' + r.donkeys.length,
+            })).sort((a, b) => b.value - a.value || c.per[b.id].pen.amount - c.per[a.id].pen.amount);
+            const clean = c.table.filter(r => !r.donkeys.length).map(r => first(r.m.id));
+            return (
+              <>
+                {rows.length ? <RankBars rows={rows} me={meId} focus={focusId} /> : null}
+                {clean.length ? <Text style={[s.small, { padding: 14, paddingTop: 4, textAlign: 'right' }]}>✨ عمرهم ما كانو حمير: {clean.join('، ')}</Text> : null}
+              </>
+            );
+          })(),
+        },
+        {
+          title: 'الانتظام', sub: 'المعدل، التذبذب (σ)، فوق المعدل، 🐴',
           head: (
             <View style={[s.tr, s.thRow]}>
               <Text style={[s.th, { flex: 1 }]}>اللاعب</Text>
               <Text style={[s.th, s.colN]}>المعدل</Text>
               <Text style={[s.th, s.colN]}>σ</Text>
               <Text style={[s.th, s.colN]}>فوق</Text>
+              <Text style={[s.th, { width: 40, textAlign: 'left' }]}>🐴</Text>
             </View>
           ),
           body: [...S.per].sort((a, b) => b.avg - a.avg).map(x => (
@@ -1051,6 +1069,7 @@ function Stats({ c, data, meId, open, refreshControl }) {
               <Text style={[s.num, s.colN, s.bold]}>{x.avg.toFixed(1)}</Text>
               <Text style={[s.num, s.colN]}>{x.sd.toFixed(1)}</Text>
               <Text style={[s.num, s.colN]}>{x.above}/{S.gws.length}</Text>
+              <Text style={[s.num, { width: 40, textAlign: 'left', color: C.donkey, fontWeight: '800' }]}>{c.per[x.id] ? c.per[x.id].donkeys.length : 0}</Text>
             </TouchableOpacity>
           )),
         },
@@ -1918,7 +1937,7 @@ export default function App() {
     }).catch(() => {});
     const onShow = () => { if (document.visibilityState === 'visible') check(); };
     document.addEventListener('visibilitychange', onShow);
-    const t = setInterval(check, 5 * 60000);
+    const t = setInterval(check, 2 * 60000);
     return () => { document.removeEventListener('visibilitychange', onShow); clearInterval(t); };
   }, []);
 
