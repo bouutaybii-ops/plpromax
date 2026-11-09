@@ -1355,15 +1355,16 @@ function ScoutTransfers({ c, data, teamS, openPlayer, refreshControl, mine = {} 
   );
 }
 
-function Hmar({ c, open, refreshControl }) {
+function Hmar({ c, meId, open, refreshControl }) {
   const name = id => c.per[id].m.name;
   // 7mar GW N kaybda l-7okm dyalo m3a 00:00 mn b3d akhir match f GW N, w kaysali m3a 00:00 mn b3d
   // akhir match f GW N+1. Donc mli katsali GW N, 7mar GW N-1 kayb9a 7tta l-lil, 3ad kaytbeddel bo7do.
   const last = c.byGw[c.byGw.length - 1];
   const prev = c.byGw[c.byGw.length - 2];
   const [expired, setExpired] = useState(null);
+  const [tab, setTab] = useState('rank');
   const cur = last && prev && expired !== last.gw ? prev : last;
-  const pens = [...c.table].sort((a, b) => b.pen.amount - a.pen.amount || b.donkeys.length - a.donkeys.length);
+  const pens = [...c.table].sort((a, b) => b.pen.amount - a.pen.amount || b.donkeys.length - a.donkeys.length || b.total - a.total);
   const banner = cur ? (
     <View style={s.donkeyRow}>
       <View style={s.donkeyIcon}><Text style={{ fontSize: 22 }}>🐴</Text></View>
@@ -1376,60 +1377,86 @@ function Hmar({ c, open, refreshControl }) {
   ) : (
     <Card><Text style={[s.txt, { padding: 16 }]}>حتى جولة ما سالات من بداية الدوري.</Text></Card>
   );
-  return (
-    <Sections
-      refreshControl={refreshControl}
-      sections={[
-        { body: banner, bare: true },
-        {
-          title: 'العقوبات', sub: 'بالدرهم',
-          head: (
-            <View style={[s.tr, s.thRow]}>
-              <Text style={[s.th, { flex: 1 }]}>اللاعب</Text>
-              <Text style={[s.th, s.colN]}>حمار</Text>
-              <Text style={[s.th, s.colN]}>DH</Text>
-            </View>
-          ),
-          body: pens.map(r => (
-            <TouchableOpacity key={r.m.id} style={s.tr} onPress={() => open(r.m.id)}>
-              <Text style={[s.txt, { flex: 1 }]} numberOfLines={1}>{r.m.name}</Text>
-              <View style={{ flexDirection: 'row-reverse', gap: 4 }}>
-                {r.pen.streaks ? <Pill kind="bad" text={'متتابعين ×' + r.pen.streaks} /> : null}
-                {r.pen.triples ? <Pill kind="d" text={'3 مرات ×' + r.pen.triples} /> : null}
+  const Tabs = (
+    <View style={s.tTabs}>
+      {[['rank', '🏆 الترتيب العام للحمير'], ['gw', '📅 حمار كل جولة']].map(([k, l]) => (
+        <TouchableOpacity key={k} onPress={() => setTab(k)} style={[s.tTab, tab === k && s.tTabOn]}>
+          <Text style={[s.tTabT, tab === k && s.tTabTOn]}>{l}</Text>
+        </TouchableOpacity>
+      ))}
+    </View>
+  );
+
+  const rank = (
+    <>
+      <View style={s.tHero}>
+        <Text style={s.tHeroK}>الصندوق ديال الحمير</Text>
+        <View style={{ flexDirection: 'row-reverse', gap: 10 }}>
+          <View style={s.tHeroBox}><Text style={s.tHeroN}>{c.fund} DH</Text><Text style={s.tHeroL}>العقوبات</Text></View>
+          <View style={s.tHeroBox}><Text style={s.tHeroN}>{c.byGw.length}</Text><Text style={s.tHeroL}>حمار حتى لدابا</Text></View>
+          <View style={s.tHeroBox}><Text style={[s.tHeroN, { color: C.neon }]}>{c.clean.length}</Text><Text style={s.tHeroL}>نظاف ✨</Text></View>
+        </View>
+      </View>
+      <View style={s.tCard}>
+        {pens.map((r, i) => {
+          const n = r.donkeys.length;
+          const top = n && i < 3;
+          return (
+            <TouchableOpacity key={r.m.id} activeOpacity={0.8} onPress={() => open(r.m.id)} style={[s.hRow, r.m.id === meId && { backgroundColor: C.me }]}>
+              <View style={[s.hRank, top && { backgroundColor: C.donkey }]}><Text style={[s.hRankT, top && { color: '#fff' }]}>{i + 1}</Text></View>
+              <View style={{ flex: 1, gap: 4 }}>
+                <Text style={s.tName} numberOfLines={1}>{r.m.name}</Text>
+                {n ? (
+                  <View style={{ flexDirection: 'row-reverse', gap: 4, flexWrap: 'wrap' }}>
+                    {[...r.donkeys].sort((a, b) => a - b).map(g => <View key={g} style={s.hGw}><Text style={s.hGwT}>GW{g}</Text></View>)}
+                    {r.pen.streaks ? <Pill kind="bad" text={'متتابعين ×' + r.pen.streaks} /> : null}
+                    {r.pen.triples ? <Pill kind="d" text={'3 مرات ×' + r.pen.triples} /> : null}
+                  </View>
+                ) : <Text style={[s.small, { color: C.good, fontWeight: '800' }]}>✨ عمرو ما كان حمار</Text>}
               </View>
-              <Text style={[s.num, s.colN]}>🐴{r.donkeys.length}</Text>
-              <Text style={[s.num, s.colN, s.bold]}>{r.pen.amount}</Text>
+              <View style={s.hCount}>
+                <Text style={s.hCountN}>🐴 {n}</Text>
+                <Text style={[s.hCountDH, !r.pen.amount && { color: C.muted }]}>{r.pen.amount} DH</Text>
+              </View>
             </TouchableOpacity>
-          )),
-        },
-        {
-          title: 'الحمير جولة بجولة',
-          body: (
-            <View style={s.dgList}>
-              {[...c.byGw].reverse().map((b, i) => (
-                <TouchableOpacity key={b.gw} style={s.dgCard} onPress={() => open(b.ids[0])} activeOpacity={0.8}>
-                  <View style={[s.dgGw, i === 0 && { backgroundColor: C.pink }]}>
-                    <Text style={s.dgGwL}>GW</Text>
-                    <Text style={s.dgGwN}>{b.gw}</Text>
-                  </View>
-                  <View style={{ flex: 1, gap: 2 }}>
-                    <Text style={s.dgName} numberOfLines={1}>{b.ids.map(name).join('، ')}</Text>
-                    <View style={{ flexDirection: 'row-reverse', alignItems: 'center', gap: 6 }}>
-                      <Text style={s.dgTeam} numberOfLines={1}>{b.ids.map(id => c.per[id].m.team).join('، ')}</Text>
-                      {b.tie ? <View style={s.dgTie}><Text style={s.dgTieT}>تعادل</Text></View> : null}
-                    </View>
-                  </View>
-                  <View style={s.dgPts}>
-                    <Text style={s.dgPtsN}>{b.min}</Text>
-                    <Text style={s.dgPtsL}>pts</Text>
-                  </View>
-                </TouchableOpacity>
-              ))}
+          );
+        })}
+      </View>
+    </>
+  );
+
+  const perGw = (
+    <View style={s.dgList}>
+      {[...c.byGw].reverse().map((b, i) => (
+        <TouchableOpacity key={b.gw} style={s.dgCard} onPress={() => open(b.ids[0])} activeOpacity={0.8}>
+          <View style={[s.dgGw, i === 0 && { backgroundColor: C.pink }]}>
+            <Text style={s.dgGwL}>GW</Text>
+            <Text style={s.dgGwN}>{b.gw}</Text>
+          </View>
+          <View style={{ flex: 1, gap: 2 }}>
+            <Text style={s.dgName} numberOfLines={1}>{b.ids.map(name).join('، ')}</Text>
+            <View style={{ flexDirection: 'row-reverse', alignItems: 'center', gap: 6 }}>
+              <Text style={s.dgTeam} numberOfLines={1}>{b.ids.map(id => c.per[id].m.team).join('، ')}</Text>
+              {b.tie ? <View style={s.dgTie}><Text style={s.dgTieT}>تعادل</Text></View> : null}
             </View>
-          ),
-        },
-      ]}
-    />
+          </View>
+          <View style={s.dgPts}>
+            <Text style={s.dgPtsN}>{b.min}</Text>
+            <Text style={s.dgPtsL}>pts</Text>
+          </View>
+        </TouchableOpacity>
+      ))}
+    </View>
+  );
+
+  return (
+    <View style={s.fixedPage}>
+      {banner}
+      {Tabs}
+      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ gap: 10, paddingBottom: 24 }} refreshControl={refreshControl}>
+        {tab === 'rank' ? rank : perGw}
+      </ScrollView>
+    </View>
   );
 }
 function Stats({ c, data, meId, open, refreshControl }) {
@@ -2627,7 +2654,7 @@ export default function App() {
               {tab === 'table' ? <Classement c={c} data={data} meId={meId} open={open} refreshControl={pullToRefresh} /> :
                tab === 'scout' ? <Scout c={c} data={data} meId={meId} refreshControl={pullToRefresh} /> :
                tab === 'matches' ? <Matches data={data} meId={meId} refreshControl={pullToRefresh} /> :
-               tab === 'hmar' ? <Hmar c={c} open={open} refreshControl={pullToRefresh} /> :
+               tab === 'hmar' ? <Hmar c={c} meId={meId} open={open} refreshControl={pullToRefresh} /> :
                tab === 'stats' ? <Stats c={c} data={data} meId={meId} open={open} refreshControl={pullToRefresh} /> :
                <Fund c={c} refreshControl={pullToRefresh} />}
             </View>
@@ -2753,6 +2780,14 @@ const s = StyleSheet.create({
   fxBonusNT: { color: '#fff', fontSize: 11, fontWeight: '900' },
   fxBpsBar: { width: 70, height: 6, borderRadius: 3, backgroundColor: C.bg, overflow: 'hidden', flexDirection: 'row-reverse' },
   fxBpsFill: { height: 6, backgroundColor: '#953bff', borderRadius: 3 },
+  hRow: { flexDirection: 'row-reverse', alignItems: 'center', gap: 10, paddingVertical: 10, paddingHorizontal: 12, borderBottomWidth: 1, borderColor: C.line },
+  hRank: { width: 28, height: 28, borderRadius: 14, backgroundColor: C.bg, alignItems: 'center', justifyContent: 'center' },
+  hRankT: { fontSize: 12, fontWeight: '900', color: C.pitch },
+  hGw: { backgroundColor: C.donkeyBg, borderRadius: 6, paddingHorizontal: 6, paddingVertical: 1 },
+  hGwT: { fontSize: 10, fontWeight: '900', color: C.donkey },
+  hCount: { alignItems: 'center', minWidth: 62 },
+  hCountN: { fontSize: 16, fontWeight: '900', color: C.donkey },
+  hCountDH: { fontSize: 12, fontWeight: '900', color: C.bad },
   tTabs: { flexDirection: 'row-reverse', backgroundColor: C.pitch, borderRadius: 14, padding: 4, gap: 4 },
   tTab: { flex: 1, paddingVertical: 8, borderRadius: 10, alignItems: 'center' },
   tTabOn: { backgroundColor: C.neon },
