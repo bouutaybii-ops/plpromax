@@ -87,6 +87,9 @@ async function loadLeague() {
     full: `${el.first_name} ${el.second_name}`, price: el.now_cost / 10, total: el.total_points, form: el.form,
     ppg: el.points_per_game, sel: el.selected_by_percent, g: el.goals_scored, a: el.assists, cs: el.clean_sheets,
     min: el.minutes, bonus: el.bonus, xg: el.expected_goals, xa: el.expected_assists, news: el.news,
+    ev: el.event_points, tin: el.transfers_in_event, tout: el.transfers_out_event, cc: el.cost_change_event / 10,
+    ccs: el.cost_change_start / 10, ict: +el.ict_index, xgi: +el.expected_goal_involvements, bps: el.bps,
+    dc: el.defensive_contribution, sv: el.saves, gc: el.goals_conceded, ep: +el.ep_next, st: el.status, chance: el.chance_of_playing_next_round,
   }; });
   const teams = {};
   const teamInfo = {};
@@ -767,6 +770,292 @@ function Matches({ data, refreshControl }) {
         ))}
       </ScrollView>
     </View>
+  );
+}
+
+// Jadwal 3am kayt-rattab b l-3amoud (b7al AG Grid): smiya tabta 3la l-imin, l-b9iya kayt-scrollaw.
+function SortGrid({ cols, rows, initial, nameCell, onRow, meId, page = 60, nameW = 150 }) {
+  const [sort, setSort] = useState(initial || { k: cols[0].k, dir: -1 });
+  const [limit, setLimit] = useState(page);
+  const col = cols.find(x => x.k === sort.k) || cols[0];
+  const val = x => (col.get ? col.get(x) : x[col.k]);
+  const cmp = (a, b) => {
+    const va = val(a), vb = val(b);
+    if (col.str) return sort.dir * String(va || '￿').localeCompare(String(vb || '￿'));
+    if (va == null && vb == null) return 0;
+    if (va == null) return 1;
+    if (vb == null) return -1;
+    return sort.dir * (va - vb);
+  };
+  const sorted = [...rows].sort(cmp);
+  const shown = sorted.slice(0, limit);
+  const press = k => { setLimit(page); setSort(st => (st.k === k ? { k, dir: -st.dir } : { k, dir: cols.find(x => x.k === k).asc ? 1 : -1 })); };
+  const head = useRef(null);
+  const body = useRef(null);
+  const width = cols.reduce((a, x) => a + x.w, 0);
+  const toEnd = () => { head.current && head.current.scrollToEnd({ animated: false }); body.current && body.current.scrollToEnd({ animated: false }); };
+  const cell = (x, cl) => {
+    if (cl.render) return cl.render(x);
+    const v = cl.get ? cl.get(x) : x[cl.k];
+    if (v == null) return <Text style={s.gridDim}>–</Text>;
+    if (!v && cl.zero) return <Text style={s.gridDim}>{cl.zero}</Text>;
+    const color = typeof cl.color === 'function' ? cl.color(v, x) : cl.color;
+    return <Text style={[s.gridNum, cl.bold && { fontWeight: '900', fontSize: 15 }, color && { color }]} numberOfLines={1}>{cl.fmt ? cl.fmt(v, x) : v}</Text>;
+  };
+  return (
+    <View style={{ flex: 1 }}>
+      <View style={[s.gridRow, s.gridHeadRow]}>
+        <View style={[s.gridName, s.gridH, { height: 44, width: nameW }]}><Text style={s.gridHT}># · اللاعب</Text></View>
+        <ScrollView ref={head} horizontal scrollEnabled={false} showsHorizontalScrollIndicator={false} style={{ flex: 1, direction: 'ltr' }}>
+          <View style={{ flexDirection: 'row-reverse', width }}>
+            {cols.map(cl => {
+              const on = sort.k === cl.k;
+              return (
+                <TouchableOpacity key={cl.k} onPress={() => press(cl.k)} style={[s.gridH, { width: cl.w }, on && s.gridHOn]}>
+                  <Text style={[s.gridHT, on && { color: C.pitch }]} numberOfLines={2}>{cl.t}</Text>
+                  <Text style={[s.gridArrow, on && { color: C.pink }]}>{on ? (sort.dir < 0 ? '▼' : '▲') : '⇅'}</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        </ScrollView>
+      </View>
+      <ScrollView style={{ flex: 1 }}>
+        <View style={s.gridRow}>
+          <View style={[s.gridName, { width: nameW }]}>
+            {shown.map((x, i) => (
+              <TouchableOpacity key={x.id} onPress={() => onRow && onRow(x)} style={[s.gridNameCell, i % 2 && s.gridAlt, x.id === meId && { backgroundColor: C.me }]}>
+                <View style={[s.rk, { width: 24, height: 24 }]}><Text style={[s.rkT, { fontSize: 10 }]}>{i + 1}</Text></View>
+                <View style={{ flex: 1 }}>{nameCell(x)}</View>
+              </TouchableOpacity>
+            ))}
+          </View>
+          <ScrollView ref={body} horizontal style={{ flex: 1, direction: 'ltr' }} onContentSizeChange={toEnd} onLayout={toEnd}
+            scrollEventThrottle={16} onScroll={e => head.current && head.current.scrollTo({ x: e.nativeEvent.contentOffset.x, animated: false })}>
+            <View style={{ width }}>
+              {shown.map((x, i) => (
+                <TouchableOpacity key={x.id} activeOpacity={0.7} onPress={() => onRow && onRow(x)} style={[s.gridCells, i % 2 && s.gridAlt, x.id === meId && { backgroundColor: C.me }]}>
+                  {cols.map(cl => <View key={cl.k} style={[s.gridCell, { width: cl.w }, sort.k === cl.k && s.gridCellOn]}>{cell(x, cl)}</View>)}
+                </TouchableOpacity>
+              ))}
+            </View>
+          </ScrollView>
+        </View>
+        {sorted.length > limit ? (
+          <TouchableOpacity onPress={() => setLimit(l => l + page)} style={s.moreBtn}>
+            <Text style={s.moreBtnT}>عرض المزيد ({sorted.length - limit} باقيين)</Text>
+          </TouchableOpacity>
+        ) : null}
+      </ScrollView>
+    </View>
+  );
+}
+
+// Safhat l-kachafa: les joueurs l-7a9i9iyin (points, bonus, ownership, prix, transferts) w
+// l-intiqalat dyal l-ligue (chkoun jab chkoun w chkoun ba3o) + dyal FPL kamla.
+const fmtK = n => (n >= 1e6 ? (n / 1e6).toFixed(1) + 'M' : n >= 1e3 ? Math.round(n / 1e3) + 'k' : String(n || 0));
+const iso2 = t => `⁦${t}⁩`;
+function Scout({ c, data, refreshControl }) {
+  const [view, setView] = useState('players');
+  const [pos, setPos] = useState(0);
+  const [q, setQ] = useState('');
+  const [sel, setSel] = useState(null);
+  const [ctx, setCtx] = useState(null);
+  const players = data.players || {};
+  const teamS = id => ((data.teamInfo || {})[id] || {}).s || (data.teams || {})[id] || '';
+  const lp = Object.values((data.leaguePicks || {}).by || {});
+  const own = {};
+  lp.forEach(t => (t.picks || []).forEach(pk => { own[pk.element] = (own[pk.element] || 0) + 1; }));
+  const nL = lp.length;
+
+  const openPlayer = async el => {
+    let g = ctx;
+    if (!g && data.current) {
+      try { g = await loadGwContext(data.current, players); setCtx(g); } catch { g = null; }
+    }
+    const lv = g ? (g.live[el] || {}) : {};
+    const bonus = g ? g.bonus[el] || 0 : 0;
+    setSel({ p: { element: el, eff: 1, bonus, pts: (lv.total_points || 0) + bonus, base: (lv.total_points || 0) + bonus }, team: { gw: data.current, explain: g ? g.explain : {}, byTeam: g ? g.byTeam : {} } });
+  };
+
+  const rows = useMemo(() => Object.entries(players).map(([id, pl]) => ({ id: +id, ...pl, own: own[id] || 0, sel: +pl.sel || 0, form: +pl.form || 0, ppg: +pl.ppg || 0 })), [data]);
+  const needle = q.trim().toLowerCase();
+  const list = rows.filter(r => (!pos || r.t === pos) && r.t !== 5 && (!needle || (r.n + ' ' + r.full).toLowerCase().includes(needle) || teamS(r.team).toLowerCase() === needle));
+  const gw = data.current;
+  const cols = [
+    { k: 'ev', t: gw ? `GW${gw}` : 'الجولة', w: 50, bold: true },
+    { k: 'total', t: 'المجموع', w: 58 },
+    { k: 'bonus', t: '★ بونيس', w: 54, color: '#c99a00', zero: '·' },
+    { k: 'sel', t: 'امتلاك %', w: 62, fmt: v => v.toFixed(1) },
+    { k: 'own', t: `👥 الليگ`, w: 58, zero: '·', fmt: v => `${v}/${nL}` },
+    { k: 'form', t: 'الفورم', w: 52, fmt: v => v.toFixed(1) },
+    { k: 'price', t: 'السعر', w: 56, fmt: v => iso2('£' + v.toFixed(1)) },
+    { k: 'cc', t: '± السعر', w: 56, zero: '·', fmt: v => (v > 0 ? '+' : '') + v.toFixed(1), color: v => (v > 0 ? C.good : C.bad) },
+    { k: 'tin', t: '📥 شراو', w: 62, fmt: fmtK, color: C.good },
+    { k: 'tout', t: '📤 باعو', w: 62, fmt: fmtK, color: C.bad },
+    { k: 'net', t: 'الفرق', w: 60, get: x => (x.tin || 0) - (x.tout || 0), fmt: v => (v >= 0 ? '+' : '−') + fmtK(Math.abs(v)), color: v => (v >= 0 ? C.good : C.bad) },
+    { k: 'g', t: '⚽', w: 40, zero: '·' },
+    { k: 'a', t: '🅰️', w: 40, zero: '·' },
+    { k: 'cs', t: 'CS', w: 40, zero: '·' },
+    { k: 'dc', t: 'DC', w: 44, zero: '·' },
+    { k: 'xgi', t: 'xGI', w: 50, fmt: v => v.toFixed(1), zero: '·' },
+    { k: 'ict', t: 'ICT', w: 52, fmt: v => v.toFixed(0) },
+    { k: 'bps', t: 'BPS', w: 52 },
+    { k: 'ppg', t: 'PPG', w: 48, fmt: v => v.toFixed(1) },
+    { k: 'min', t: 'دقايق', w: 56 },
+    { k: 'ep', t: 'xPts جاية', w: 62, fmt: v => v.toFixed(1) },
+  ];
+
+  const nameCell = x => (
+    <>
+      <Text style={[s.txt, s.bold, { fontSize: 13, writingDirection: 'ltr', textAlign: 'right' }]} numberOfLines={1}>{x.n}{x.st && x.st !== 'a' ? ' ⚠️' : ''}</Text>
+      <Text style={[s.small, { fontSize: 10 }]} numberOfLines={1}>{teamS(x.team)} · {POS_AR[x.t]}</Text>
+    </>
+  );
+
+  const Seg = (
+    <View style={s.seg}>
+      {[['players', '📊 اللاعبين'], ['transfers', '🔄 الانتقالات']].map(([k, l]) => (
+        <TouchableOpacity key={k} onPress={() => setView(k)} style={[s.segBtn, view === k && s.segOn]}>
+          <Text style={[s.segT, view === k && { color: '#fff' }]}>{l}</Text>
+        </TouchableOpacity>
+      ))}
+    </View>
+  );
+
+  const sheet = sel ? <PlayerSheet p={sel.p} team={sel.team} data={data} c={c} onClose={() => setSel(null)} /> : null;
+
+  if (view === 'transfers') {
+    return (
+      <View style={s.fixedPage}>
+        {Seg}
+        <ScoutTransfers c={c} data={data} teamS={teamS} openPlayer={openPlayer} refreshControl={refreshControl} />
+        {sheet}
+      </View>
+    );
+  }
+  return (
+    <View style={s.fixedPage}>
+      {Seg}
+      <View style={[s.card, s.fixedCard]}>
+        <View style={{ padding: 10, gap: 8 }}>
+          <View style={{ flexDirection: 'row-reverse', gap: 6, flexWrap: 'wrap' }}>
+            {[[0, 'الكل'], [1, 'حراس'], [2, 'دفاع'], [3, 'وسط'], [4, 'هجوم']].map(([k, l]) => (
+              <TouchableOpacity key={k} onPress={() => setPos(k)} style={[s.chipBtn, pos === k && s.chipOn]}>
+                <Text style={[s.chipT, pos === k && { color: '#fff' }]}>{l}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+          <TextInput value={q} onChangeText={setQ} placeholder="🔎 قلب على لاعب ولا فريق (ARS, LIV…)" placeholderTextColor={C.muted} style={s.search} autoCorrect={false} autoCapitalize="none" />
+          <Text style={[s.small, { textAlign: 'center' }]}>{list.length} لاعب · كليكي على العمود باش ترتب · على اللاعب باش تشوف كولشي</Text>
+        </View>
+        <SortGrid key={pos + needle} cols={cols} rows={list} initial={{ k: 'total', dir: -1 }} nameCell={nameCell} onRow={x => openPlayer(x.id)} />
+      </View>
+      {sheet}
+    </View>
+  );
+}
+
+function ScoutTransfers({ c, data, teamS, openPlayer, refreshControl }) {
+  const players = data.players || {};
+  const pn = el => (players[el] || {}).n || '?';
+  const ids = (data.managers || []).map(m => m.id);
+  const [tr, setTr] = useState(null);
+  const [gw, setGw] = useState(null);
+  useEffect(() => {
+    let alive = true;
+    Promise.all(ids.map(id => getJson(`/entry/${id}/transfers/`).then(x => x.map(t => ({ ...t, entry: id }))).catch(() => [])))
+      .then(all => { if (!alive) return; const flat = all.flat(); setTr(flat); setGw(Math.max(0, ...flat.map(t => t.event)) || null); });
+    return () => { alive = false; };
+  }, [data.fetchedAt]);
+  const gws = tr ? [...new Set(tr.map(t => t.event))].sort((a, b) => b - a) : [];
+  const now = (tr || []).filter(t => t.event === gw);
+  const tally = key => {
+    const m = {};
+    now.forEach(t => { (m[t[key]] = m[t[key]] || []).push(t.entry); });
+    return Object.entries(m).map(([el, who]) => ({ el: +el, who })).sort((a, b) => b.who.length - a.who.length).slice(0, 8);
+  };
+  const first = id => (c.per[id] ? c.per[id].m.name.split(' ')[0] : '?');
+  const byMgr = {};
+  now.forEach(t => { (byMgr[t.entry] = byMgr[t.entry] || []).push(t); });
+  const global = Object.entries(players).filter(([, p]) => p.t !== 5).map(([id, p]) => ({ el: +id, ...p }));
+  const top = (f, n = 8) => [...global].sort((a, b) => f(b) - f(a)).slice(0, n);
+  const rise = global.filter(p => p.cc > 0).sort((a, b) => b.cc - a.cc || b.tin - a.tin).slice(0, 8);
+  const fall = global.filter(p => p.cc < 0).sort((a, b) => a.cc - b.cc || b.tout - a.tout).slice(0, 8);
+
+  const Line = ({ el, right, sub, color }) => (
+    <TouchableOpacity onPress={() => openPlayer(el)} style={s.scLine}>
+      <Text style={[s.txt, s.bold, { flexShrink: 1 }]} numberOfLines={1}>{pn(el)}</Text>
+      <Text style={s.small}>{teamS((players[el] || {}).team)}</Text>
+      <Text style={[s.small, { flex: 1, textAlign: 'left' }]} numberOfLines={1}>{sub || ''}</Text>
+      <Text style={[s.gridNum, color && { color }]}>{right}</Text>
+    </TouchableOpacity>
+  );
+
+  return (
+    <Sections
+      refreshControl={refreshControl}
+      sections={[
+        {
+          title: 'انتقالات الليگ', sub: gw ? `GW${gw} · ${now.length} انتقال` : '',
+          body: !tr ? <ActivityIndicator color={C.pink} style={{ padding: 30 }} /> : (
+            <View style={{ paddingBottom: 8 }}>
+              <View style={{ flexDirection: 'row-reverse', gap: 6, flexWrap: 'wrap', padding: 10 }}>
+                {gws.slice(0, 8).map(g => (
+                  <TouchableOpacity key={g} onPress={() => setGw(g)} style={[s.chipBtn, gw === g && s.chipOn]}>
+                    <Text style={[s.chipT, gw === g && { color: '#fff' }]}>GW{g}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+              {now.length ? (
+                <>
+                  <Text style={s.scHead}>📥 أكثر لاعبين جابوهم</Text>
+                  {tally('element_in').map(x => <Line key={'i' + x.el} el={x.el} right={'×' + x.who.length} sub={x.who.map(first).join('، ')} color={C.good} />)}
+                  <Text style={s.scHead}>📤 أكثر لاعبين باعوهم</Text>
+                  {tally('element_out').map(x => <Line key={'o' + x.el} el={x.el} right={'×' + x.who.length} sub={x.who.map(first).join('، ')} color={C.bad} />)}
+                </>
+              ) : <Text style={[s.small, { textAlign: 'center', padding: 14 }]}>حتى واحد ما بدّل ف هاد الجولة.</Text>}
+            </View>
+          ),
+        },
+        now.length ? {
+          title: 'شكون بدّل شنو', sub: gw ? `GW${gw}` : '',
+          body: Object.entries(byMgr).sort((a, b) => b[1].length - a[1].length).map(([id, ts]) => (
+            <View key={id} style={s.scMgr}>
+              <Text style={[s.txt, s.bold]} numberOfLines={1}>{c.per[id] ? c.per[id].m.name : id}  <Text style={s.small}>{ts.length} تبديل</Text></Text>
+              {ts.map((t, i) => (
+                <View key={i} style={s.scSwap}>
+                  <Text style={[s.small, { color: C.good, fontWeight: '800' }]} numberOfLines={1}>📥 {pn(t.element_in)} {iso2('£' + (t.element_in_cost / 10).toFixed(1))}</Text>
+                  <Text style={[s.small, { color: C.bad, fontWeight: '800' }]} numberOfLines={1}>📤 {pn(t.element_out)} {iso2('£' + (t.element_out_cost / 10).toFixed(1))}</Text>
+                </View>
+              ))}
+            </View>
+          )),
+        } : null,
+        {
+          title: 'FPL كاملة · هاد الجولة', sub: 'الأكثر شراء و بيع فالعالم',
+          body: (
+            <View style={{ paddingBottom: 8 }}>
+              <Text style={s.scHead}>📥 الأكثر شراء</Text>
+              {top(p => p.tin).map(p => <Line key={'gi' + p.el} el={p.el} right={fmtK(p.tin)} sub={iso2('£' + p.price.toFixed(1)) + ' · ' + p.sel + '%'} color={C.good} />)}
+              <Text style={s.scHead}>📤 الأكثر بيع</Text>
+              {top(p => p.tout).map(p => <Line key={'go' + p.el} el={p.el} right={fmtK(p.tout)} sub={iso2('£' + p.price.toFixed(1)) + ' · ' + p.sel + '%'} color={C.bad} />)}
+            </View>
+          ),
+        },
+        {
+          title: 'تبدّل السعر', sub: 'هاد الجولة',
+          body: (
+            <View style={{ paddingBottom: 8 }}>
+              <Text style={s.scHead}>📈 طلعو</Text>
+              {rise.length ? rise.map(p => <Line key={'r' + p.el} el={p.el} right={'+' + p.cc.toFixed(1)} sub={iso2('£' + p.price.toFixed(1))} color={C.good} />) : <Text style={[s.small, { textAlign: 'center' }]}>والو</Text>}
+              <Text style={s.scHead}>📉 هبطو</Text>
+              {fall.length ? fall.map(p => <Line key={'f' + p.el} el={p.el} right={p.cc.toFixed(1)} sub={iso2('£' + p.price.toFixed(1))} color={C.bad} />) : <Text style={[s.small, { textAlign: 'center' }]}>والو</Text>}
+            </View>
+          ),
+        },
+      ].filter(Boolean)}
+    />
   );
 }
 
@@ -1973,7 +2262,7 @@ export default function App() {
   const c = useMemo(() => compute(data), [data]);
   const isAdmin = !!sess && sess.uid === CONFIG.staff.admin;
   const isStaff = isAdmin || (!!sess && sess.uid === CONFIG.staff.treasurer);
-  const tabs = [['table', 'الترتيب', '🏆'], ['matches', 'الماتشات', '🏟️'], ['hmar', 'الحمار', '🐴'], ['stats', 'إحصائيات', '📊'], ['me', 'فرقتي', '⚽'], ['fund', 'الصندوق', '💰'], ['pay', isStaff ? 'الخلاص' : 'حسابي', '💳'], ['rules', 'القانون', '📜']];
+  const tabs = [['table', 'الترتيب', '🏆'], ['matches', 'الماتشات', '🏟️'], ['hmar', 'الحمار', '🐴'], ['stats', 'إحصائيات', '📊'], ['scout', 'الكشافة', '🔭'], ['me', 'فرقتي', '⚽'], ['fund', 'الصندوق', '💰'], ['pay', isStaff ? 'الخلاص' : 'حسابي', '💳'], ['rules', 'القانون', '📜']];
   if (isAdmin) tabs.push(['admin', 'الإدارة', '⚙️']);
   const me = c && meId ? c.per[meId] : null;
   const pullToRefresh = <RefreshControl refreshing={loading} onRefresh={() => refresh()} />;
@@ -2035,11 +2324,12 @@ export default function App() {
               </TouchableOpacity>
             </TouchableOpacity>
           </Modal>
-          {!viewId && ['table', 'matches', 'hmar', 'stats', 'fund'].includes(tab) ? (
+          {!viewId && ['table', 'matches', 'hmar', 'stats', 'scout', 'fund'].includes(tab) ? (
             // Had les pages 3ndhom scroll dyalhom: l-entêtes dyal les jadawel kayb9aw tabtin.
             <View style={{ flex: 1, backgroundColor: C.bg }}>
               {error ? <View style={[s.err, { margin: 14, marginBottom: 0 }]}><Text style={{ color: C.bad, textAlign: 'right' }}>{error}</Text></View> : null}
               {tab === 'table' ? <Classement c={c} data={data} meId={meId} open={open} refreshControl={pullToRefresh} /> :
+               tab === 'scout' ? <Scout c={c} data={data} refreshControl={pullToRefresh} /> :
                tab === 'matches' ? <Matches data={data} refreshControl={pullToRefresh} /> :
                tab === 'hmar' ? <Hmar c={c} open={open} refreshControl={pullToRefresh} /> :
                tab === 'stats' ? <Stats c={c} data={data} meId={meId} open={open} refreshControl={pullToRefresh} /> :
@@ -2154,6 +2444,16 @@ const s = StyleSheet.create({
   fxBonusNT: { color: '#fff', fontSize: 11, fontWeight: '900' },
   fxBpsBar: { width: 70, height: 6, borderRadius: 3, backgroundColor: C.bg, overflow: 'hidden', flexDirection: 'row-reverse' },
   fxBpsFill: { height: 6, backgroundColor: '#953bff', borderRadius: 3 },
+  moreBtn: { margin: 12, padding: 12, borderRadius: 12, backgroundColor: C.bg, alignItems: 'center' },
+  moreBtnT: { color: C.pitch, fontWeight: '800', fontSize: 13 },
+  chipBtn: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 999, backgroundColor: C.bg, borderWidth: 1, borderColor: C.line },
+  chipOn: { backgroundColor: C.pitch, borderColor: C.pitch },
+  chipT: { fontSize: 12, fontWeight: '800', color: C.pitch },
+  search: { backgroundColor: C.bg, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 9, fontSize: 14, color: C.ink, textAlign: 'right', borderWidth: 1, borderColor: C.line },
+  scHead: { fontSize: 13, fontWeight: '900', color: C.pitch, textAlign: 'right', paddingHorizontal: 14, paddingTop: 10, paddingBottom: 4 },
+  scLine: { flexDirection: 'row-reverse', alignItems: 'center', gap: 8, paddingHorizontal: 14, paddingVertical: 7, borderBottomWidth: 1, borderColor: C.line },
+  scMgr: { paddingHorizontal: 14, paddingVertical: 8, borderBottomWidth: 1, borderColor: C.line, gap: 4 },
+  scSwap: { flexDirection: 'row-reverse', gap: 12, flexWrap: 'wrap' },
   gridRow: { flexDirection: 'row-reverse' },
   gridHeadRow: { backgroundColor: C.bg, borderBottomWidth: 1, borderColor: C.line, marginTop: 6 },
   gridName: { width: 150, borderLeftWidth: 1, borderColor: C.line },

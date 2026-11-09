@@ -2,7 +2,7 @@
 // L-app web kat3ayet l /api/fpl/<chemin> w hna kanjibo mn fantasy.premierleague.com/api/<chemin>.
 const FPL = 'https://fantasy.premierleague.com/api/';
 // Ghir les chemins li kat-sta3mel l-app.
-const ALLOWED = /^(bootstrap-static|fixtures|element-summary\/\d+|event\/\d+\/live|entry\/\d+\/(history|event\/\d+\/picks)|leagues-classic\/\d+\/standings)\/?$/;
+const ALLOWED = /^(bootstrap-static|fixtures|element-summary\/\d+|event\/\d+\/live|entry\/\d+\/(history|transfers|event\/\d+\/picks)|leagues-classic\/\d+\/standings)\/?$/;
 
 export async function GET(request, { path }) {
   const rel = (Array.isArray(path) ? path.join('/') : String(path || '')).replace(/\/+$/, '');
