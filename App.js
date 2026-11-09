@@ -379,6 +379,31 @@ function Login({ data, onLogin, loading, error }) {
 }
 
 /* ---------------- screens ---------------- */
+// Les onglets dyal kol safha (nafs l-design f l-app kamla): PageTabs = l-mostawa l-awel (mouf),
+// SubTabs = dakhel l-onglet (byed).
+function PageTabs({ tabs, value, onChange }) {
+  return (
+    <View style={s.tTabs}>
+      {tabs.map(([k, l]) => (
+        <TouchableOpacity key={k} onPress={() => onChange(k)} style={[s.tTab, value === k && s.tTabOn]} accessibilityRole="tab" accessibilityState={{ selected: value === k }}>
+          <Text style={[s.tTabT, value === k && s.tTabTOn]} numberOfLines={1}>{l}</Text>
+        </TouchableOpacity>
+      ))}
+    </View>
+  );
+}
+function SubTabs({ tabs, value, onChange }) {
+  return (
+    <View style={s.fSeg}>
+      {tabs.map(([k, l, color]) => (
+        <TouchableOpacity key={k} onPress={() => onChange(k)} style={[s.fSegBtn, value === k && { backgroundColor: color || C.pitch }]}>
+          <Text style={[s.fSegT, value === k && { color: '#fff' }]} numberOfLines={1}>{l}</Text>
+        </TouchableOpacity>
+      ))}
+    </View>
+  );
+}
+
 function Classement({ c, data, meId, open, refreshControl }) {
   const shares = [0.5, 0.3, 0.2];
   const medal = [C.gold, C.silver, C.bronze];
@@ -386,15 +411,7 @@ function Classement({ c, data, meId, open, refreshControl }) {
   const [mode, setMode] = useState('total');
   const [gw, setGw] = useState(c.showGw || allGws[allGws.length - 1]);
 
-  const Toggle = (
-    <View style={s.seg}>
-      {[['total', 'الترتيب العام'], ['gw', 'ترتيب الجولة']].map(([k, l]) => (
-        <TouchableOpacity key={k} onPress={() => setMode(k)} style={[s.segBtn, mode === k && s.segOn]}>
-          <Text style={[s.segT, mode === k && { color: '#fff' }]}>{l}</Text>
-        </TouchableOpacity>
-      ))}
-    </View>
-  );
+  const Toggle = <PageTabs tabs={[['total', '🏆 الترتيب العام'], ['gw', '📅 ترتيب الجولة']]} value={mode} onChange={setMode} />;
 
   if (mode === 'gw') {
     return (
@@ -412,10 +429,7 @@ function Classement({ c, data, meId, open, refreshControl }) {
     <View style={s.fixedPage}>
       {Toggle}
       <View style={[s.card, s.fixedCard]}>
-        <View style={s.cardH}>
-          <Text style={s.h2}>الترتيب العام</Text>
-          <Text style={s.muted}>{c.liveGw ? `GW${c.liveGw} مازال كتلعب` : 'بعد خصم التبديلات'}</Text>
-        </View>
+        {c.liveGw ? <Text style={[s.small, { textAlign: 'center', paddingTop: 8, color: C.pink }]}>🔴 GW{c.liveGw} مازال كتلعب</Text> : null}
         <View style={[s.tr, s.thRow]}>
           <Text style={[s.th, { width: 30 }]}>#</Text>
           <Text style={[s.th, { flex: 1 }]}>اللاعب</Text>
@@ -541,7 +555,6 @@ function GwGrid({ c, data, gw, meId, open, refreshControl }) {
   return (
     <View style={{ flex: 1 }}>
       {live ? <Text style={[s.small, { textAlign: 'center', paddingTop: 8, color: C.pink }]}>الجولة مازال كتلعب · النقاط live</Text> : null}
-      <Text style={[s.small, { textAlign: 'center', paddingTop: 4 }]}>كليكي على العمود باش ترتب · سكرولي ↔ باش تشوف كولشي</Text>
       <View style={[s.gridRow, s.gridHeadRow]}>
         <View style={[s.gridName, s.gridH, { height: 44 }]}><Text style={s.gridHT}># · اللاعب</Text></View>
         <ScrollView ref={head} horizontal scrollEnabled={false} showsHorizontalScrollIndicator={false} style={{ flex: 1, direction: 'ltr' }}>
@@ -986,15 +999,7 @@ function Scout({ c, data, meId, refreshControl }) {
   const shown = list.slice(0, limit);
   const reset = f => v => { f(v); setLimit(40); };
 
-  const Seg = (
-    <View style={s.seg}>
-      {[['players', '📊 اللاعبين'], ['transfers', '🔄 الانتقالات']].map(([k, l]) => (
-        <TouchableOpacity key={k} onPress={() => setView(k)} style={[s.segBtn, view === k && s.segOn]}>
-          <Text style={[s.segT, view === k && { color: '#fff' }]}>{l}</Text>
-        </TouchableOpacity>
-      ))}
-    </View>
-  );
+  const Seg = <PageTabs tabs={[['players', '📊 اللاعبين'], ['transfers', '🔄 الانتقالات']]} value={view} onChange={setView} />;
   const sheet = sel ? <PlayerSheet p={sel.p} team={sel.team} data={data} c={c} onClose={() => setSel(null)} /> : null;
 
   if (view === 'transfers') {
@@ -1194,24 +1199,8 @@ function ScoutTransfers({ c, data, teamS, openPlayer, refreshControl, mine = {} 
     );
   };
 
-  const Tabs = (
-    <View style={s.tTabs}>
-      {[['world', '🌍 العالم'], ['league', '👥 الليگ'], ['price', '💹 الأسعار']].map(([k, l]) => (
-        <TouchableOpacity key={k} onPress={() => setTab(k)} style={[s.tTab, tab === k && s.tTabOn]}>
-          <Text style={[s.tTabT, tab === k && s.tTabTOn]}>{l}</Text>
-        </TouchableOpacity>
-      ))}
-    </View>
-  );
-  const InOut = (
-    <View style={s.tInOut}>
-      {[['in', '📥 دخلو', C.good], ['out', '📤 خرجو', C.bad]].map(([k, l, col]) => (
-        <TouchableOpacity key={k} onPress={() => setDir(k)} style={[s.tIO, dir === k && { backgroundColor: col, borderColor: col }]}>
-          <Text style={[s.tIOT, dir === k && { color: '#fff' }]}>{l}</Text>
-        </TouchableOpacity>
-      ))}
-    </View>
-  );
+  const Tabs = <SubTabs tabs={[['world', '🌍 العالم'], ['league', '👥 الليگ'], ['price', '💹 الأسعار']]} value={tab} onChange={setTab} />;
+  const InOut = <SubTabs tabs={[['in', '📥 دخلو', C.good], ['out', '📤 خرجو', C.bad]]} value={dir} onChange={setDir} />;
 
   let body;
   if (tab === 'world') {
@@ -1253,13 +1242,7 @@ function ScoutTransfers({ c, data, teamS, openPlayer, refreshControl, mine = {} 
             <View style={s.tHeroBox}><Text style={[s.tHeroN, { color: '#ff6b9a' }]}>▼ {down.length}</Text><Text style={s.tHeroL}>هبطو</Text></View>
           </View>
         </View>
-        <View style={s.tInOut}>
-          {[['in', '📈 طلعو', C.good], ['out', '📉 هبطو', C.bad]].map(([k, l, col]) => (
-            <TouchableOpacity key={k} onPress={() => setDir(k)} style={[s.tIO, dir === k && { backgroundColor: col, borderColor: col }]}>
-              <Text style={[s.tIOT, dir === k && { color: '#fff' }]}>{l}</Text>
-            </TouchableOpacity>
-          ))}
-        </View>
+        <SubTabs tabs={[['in', '📈 طلعو', C.good], ['out', '📉 هبطو', C.bad]]} value={dir} onChange={setDir} />
         <View style={s.tCard}>
           {list.length ? list.slice(0, 25).map((p, i) => (
             <Row key={p.el} el={p.el} i={i} value={dir === 'in' ? p.tin || 0 : p.tout || 0} max={Math.max(1, ...list.slice(0, 25).map(x => (dir === 'in' ? x.tin : x.tout) || 0))}
@@ -1377,15 +1360,7 @@ function Hmar({ c, meId, open, refreshControl }) {
   ) : (
     <Card><Text style={[s.txt, { padding: 16 }]}>حتى جولة ما سالات من بداية الدوري.</Text></Card>
   );
-  const Tabs = (
-    <View style={s.tTabs}>
-      {[['rank', '🏆 الترتيب العام للحمير'], ['gw', '📅 حمار كل جولة']].map(([k, l]) => (
-        <TouchableOpacity key={k} onPress={() => setTab(k)} style={[s.tTab, tab === k && s.tTabOn]}>
-          <Text style={[s.tTabT, tab === k && s.tTabTOn]}>{l}</Text>
-        </TouchableOpacity>
-      ))}
-    </View>
-  );
+  const Tabs = <PageTabs tabs={[['rank', '🏆 الترتيب العام'], ['gw', '📅 حمار كل جولة']]} value={tab} onChange={setTab} />;
 
   const rank = (
     <>
@@ -1469,6 +1444,7 @@ function Stats({ c, data, meId, open, refreshControl }) {
   const lead = c.table[0] ? c.table[0].m.id : null;
   const second = c.table[1] ? c.table[1].m.id : null;
   const [focusId, setFocus] = useState(meId === lead ? second : lead);
+  const [tab, setTab] = useState('race');
   const focus = [
     ...(meId ? [{ id: meId, color: VIZ.me, label: 'نتا' }] : []),
     ...(focusId && focusId !== meId ? [{ id: focusId, color: VIZ.focus, label: first(focusId) }] : []),
@@ -1478,15 +1454,8 @@ function Stats({ c, data, meId, open, refreshControl }) {
   const gapLead = second ? c.per[lead].total - c.per[second].total : 0;
   const capTop = P.captains[0];
   const picker = (
-    <View style={{ paddingBottom: 8 }}>
-      <Text style={[s.small, { paddingHorizontal: 12, paddingTop: 8 }]}>قارن مع:</Text>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ flexDirection: 'row-reverse', gap: 6, paddingHorizontal: 12, paddingTop: 6 }}>
-        {c.table.filter(r => r.m.id !== meId).map(r => (
-          <TouchableOpacity key={r.m.id} onPress={() => setFocus(r.m.id)} style={[s.pickChip, focusId === r.m.id && s.pickChipOn]}>
-            <Text style={[s.pickChipT, focusId === r.m.id && { color: '#fff' }]}>{first(r.m.id)}</Text>
-          </TouchableOpacity>
-        ))}
-      </ScrollView>
+    <View style={{ paddingHorizontal: 12, paddingBottom: 8, gap: 6 }}>
+      <Dropdown label="قارن مع" value={focusId} options={c.table.filter(r => r.m.id !== meId).map(r => [r.m.id, r.m.name])} onChange={setFocus} />
       <Legend items={[...(meId ? [{ color: VIZ.me, label: 'نتا' }] : []), { color: VIZ.focus, label: focusId ? name(focusId) : '' }, { color: VIZ.context, label: 'الباقي' }]} />
     </View>
   );
@@ -1501,10 +1470,7 @@ function Stats({ c, data, meId, open, refreshControl }) {
     S.awards.spoon && ['🥄', 'الملعقة الخشبية', name(S.awards.spoon.id), `${S.awards.spoon.total} pts`],
   ].filter(Boolean);
 
-  return (
-    <Sections
-      refreshControl={refreshControl}
-      sections={[
+  const all = [
         {
           bare: true,
           body: (
@@ -1704,8 +1670,21 @@ function Stats({ c, data, meId, open, refreshControl }) {
             </ScrollView>
           ),
         },
-      ]}
-    />
+  ];
+  // Kol section f onglet: tartib b l-mawdou3 bach ma tkounch safha twila bzaf.
+  const TAB_OF = {
+    'سباق النقاط': 'race', 'سباق الترتيب': 'race',
+    'خريطة الجولات': 'gws', 'الانتظام': 'gws', 'كلشي ضد كلشي': 'gws',
+    'الأبطال': 'awards', 'الجوائز': 'awards', 'الحمير 🐴': 'awards',
+  };
+  const shown = all.filter(Boolean).filter(sec => (sec.title ? TAB_OF[sec.title] || 'teams' : 'race') === tab);
+  return (
+    <View style={{ flex: 1 }}>
+      <View style={{ paddingHorizontal: 14, paddingTop: 14 }}>
+        <PageTabs tabs={[['race', '📈 السباق'], ['gws', '🗺️ الجولات'], ['awards', '🏅 الألقاب'], ['teams', '⚽ الفرق']]} value={tab} onChange={setTab} />
+      </View>
+      <Sections key={tab} refreshControl={refreshControl} sections={shown} />
+    </View>
   );
 }
 
@@ -2047,7 +2026,7 @@ function Pitch({ team, data, c }) {
 }
 
 function Player({ c, data, id, isMe, onLogout, onBack, staff, onSession, onStaffOut }) {
-  const [staffOpen, setStaffOpen] = useState(false);
+  const [ptab, setPtab] = useState('team');
   const r = c.per[id];
   const gwList = r ? r.list.map(x => x.gw) : [];
   const [gw, setGw] = useState(c.showGw && gwList.includes(c.showGw) ? c.showGw : gwList[gwList.length - 1]);
@@ -2067,18 +2046,22 @@ function Player({ c, data, id, isMe, onLogout, onBack, staff, onSession, onStaff
   return (
     <>
       {onBack ? <TouchableOpacity onPress={onBack}><Text style={[s.txt, { color: C.pitch2, fontWeight: '700' }]}>→ رجوع</Text></TouchableOpacity> : null}
-      <View style={s.hero}>
-        <Text style={s.heroName}>{r.m.team}</Text>
-        <Text style={s.heroSub}>{r.m.name} · ID {r.m.id}</Text>
-        <View style={s.stats}>
-          {/* F "فرقتي" l-ar9am dyalek kaynin f l-header lfo9: hna ghir dakchi li ma kaynch tmma. */}
-          {!isMe ? <Stat n={'#' + r.rank} l="الترتيب" /> : null}
-          {!isMe ? <Stat n={r.total} l="المجموع" /> : null}
-          {!isMe ? <Stat n={'🐴' + r.donkeys.length} l="حمار" /> : null}
-          <Stat n={r.pen.amount} l="كيخلص DH" />
+      {/* F "فرقتي" l-ar9am dyalek kaynin f l-header lfo9: l-hero ghir l-ghir. */}
+      {!isMe ? (
+        <View style={s.hero}>
+          <Text style={s.heroName}>{r.m.team}</Text>
+          <Text style={s.heroSub}>{r.m.name} · ID {r.m.id}</Text>
+          <View style={s.stats}>
+            <Stat n={'#' + r.rank} l="الترتيب" />
+            <Stat n={r.total} l="المجموع" />
+            <Stat n={'🐴' + r.donkeys.length} l="حمار" />
+            <Stat n={r.pen.amount} l="كيخلص DH" />
+          </View>
         </View>
-      </View>
+      ) : null}
+      <PageTabs tabs={[['team', '⚽ التشكيلة'], ['season', '📈 الموسم']]} value={ptab} onChange={setPtab} />
 
+      {ptab === 'team' ? (
       <Card>
         <GwNav list={gwList} gw={gw} setGw={setGw} />
         <View style={s.gwSum}>
@@ -2096,12 +2079,13 @@ function Player({ c, data, id, isMe, onLogout, onBack, staff, onSession, onStaff
         {tErr ? <Text style={{ color: C.bad, padding: 14, textAlign: 'right' }}>{tErr}</Text> :
           !team ? <ActivityIndicator style={{ padding: 40 }} color={C.pink} /> : <Pitch team={team} data={data} c={c} />}
       </Card>
-
+      ) : (
+      <>
       <Card title="النقاط جولة بجولة" sub="البني = حمار · الذهبي = نجم">
         <ScrollView horizontal showsHorizontalScrollIndicator={false}>
           <View style={s.bars}>
             {r.list.map(x => (
-              <TouchableOpacity key={x.gw} style={s.barCol} onPress={() => setGw(x.gw)}>
+              <TouchableOpacity key={x.gw} style={s.barCol} onPress={() => { setGw(x.gw); setPtab('team'); }}>
                 <Text style={s.barV}>{x.p}</Text>
                 <View style={[s.bar, { height: 4 + 90 * (x.p / max), backgroundColor: donk.has(x.gw) ? C.donkey : r.wins.includes(x.gw) ? C.gold : C.pitch2 }, x.gw === gw && { borderWidth: 2, borderColor: C.pink }]} />
                 <Text style={[s.barL, x.gw === gw && { color: C.pink, fontWeight: '700' }]}>{x.gw}</Text>
@@ -2119,13 +2103,11 @@ function Player({ c, data, id, isMe, onLogout, onBack, staff, onSession, onStaff
         })}
         <Row left="خسارة التبديلات" right={'−' + r.hits} />
         <Row left="نقاط ضايعة فالبنك" right={r.bench} />
+        {isMe ? <Row left="🐴 العقوبات ديالك" right={r.pen.amount + ' DH'} color={r.pen.amount ? C.bad : C.muted} /> : null}
       </Card>
-      {isMe ? (
-        <>
-          <TouchableOpacity style={[s.btn, { backgroundColor: C.pink }]} onPress={onLogout}><Text style={s.btnT}>تسجيل الخروج</Text></TouchableOpacity>
-          {staff ? <Text style={[s.small, { textAlign: 'center', color: C.pitch2 }]}>{staff === 'admin' ? 'متصل كمسؤول' : 'متصل كأمين المال'}</Text> : null}
-        </>
-      ) : null}
+      {isMe && staff ? <Text style={[s.small, { textAlign: 'center', color: C.pitch2 }]}>{staff === 'admin' ? 'متصل كمسؤول' : 'متصل كأمين المال'}</Text> : null}
+      </>
+      )}
     </>
   );
 }
@@ -2420,11 +2402,21 @@ function Fund({ c, refreshControl }) {
   const bonusRec = c.record ? 100 : 0;
   const bonusClean = c.clean.length * 100;
   const cup = c.fund - bonusRec - bonusClean;
-  return (
-    <Sections
-      refreshControl={refreshControl}
-      sections={[
+  const [tab, setTab] = useState('prize');
+  const hero = (
+    <View style={s.tHero}>
+      <Text style={s.tHeroK}>الصندوق ديال الليگ</Text>
+      <View style={{ flexDirection: 'row-reverse', gap: 10 }}>
+        <View style={s.tHeroBox}><Text style={s.tHeroN}>{fmt(c.pool)}</Text><Text style={s.tHeroL}>انخراطات DH</Text></View>
+        <View style={s.tHeroBox}><Text style={s.tHeroN}>{fmt(c.fund)}</Text><Text style={s.tHeroL}>عقوبات DH</Text></View>
+        <View style={s.tHeroBox}><Text style={[s.tHeroN, { color: cup < 0 ? '#ff6b9a' : C.neon }]}>{fmt(cup)}</Text><Text style={s.tHeroL}>للكأس DH</Text></View>
+      </View>
+    </View>
+  );
+  const all = [
+        { body: hero, bare: true },
         {
+          tab: 'prize',
           title: 'الانخراطات', sub: `${c.table.length} × ${CONFIG.fee} DH`,
           body: (
             <>
@@ -2436,6 +2428,7 @@ function Fund({ c, refreshControl }) {
           ),
         },
         {
+          tab: 'fund',
           title: 'صندوق الحمير', sub: c.gws.length ? `حتى لـ GW${c.gws[c.gws.length - 1]}` : '',
           body: (
             <>
@@ -2446,9 +2439,18 @@ function Fund({ c, refreshControl }) {
             </>
           ),
         },
-      ]}
-      footer={<Text style={s.note}>البريمات كتعطى فآخر الموسم. هاد الحساب كيبين شكون غادي يربح إلا وقف الموسم دابا.</Text>}
-    />
+  ];
+  return (
+    <View style={{ flex: 1 }}>
+      <View style={{ paddingHorizontal: 14, paddingTop: 14 }}>
+        <PageTabs tabs={[['prize', '🏆 الجوائز'], ['fund', '🐴 صندوق الحمير']]} value={tab} onChange={setTab} />
+      </View>
+      <Sections
+        refreshControl={refreshControl}
+        sections={all.filter(x => !x.tab || x.tab === tab)}
+        footer={<Text style={s.note}>البريمات كتعطى فآخر الموسم. هاد الحساب كيبين شكون غادي يربح إلا وقف الموسم دابا.</Text>}
+      />
+    </View>
   );
 }
 
@@ -2460,17 +2462,24 @@ function Rules() {
     ['4. البريمات 🎯', ['أعلى سكور فجولة وحدة فالموسم، بلا خاصيات: 100 درهم (لاعب واحد، مرة وحدة).', 'اللي ما عمرو جا حمار طول الموسم: 100 درهم.']],
     ['5. الكأس 🏆', ['الفائز بالكأس كيربح الباقي كامل من الصندوق.']],
   ];
+  const [openI, setOpenI] = useState(0);
+  // Accordion: kol 9a3ida katt7el b click, l-b9iya msddin.
   return (
-    <Card>
-      <View style={{ padding: 14, gap: 14 }}>
-        {blocks.map(([t, items]) => (
-          <View key={t}>
-            <Text style={[s.txt, s.bold, { marginBottom: 4 }]}>{t}</Text>
-            {items.map(x => <Text key={x} style={s.txt}>• {x}</Text>)}
-          </View>
-        ))}
-      </View>
-    </Card>
+    <View style={{ gap: 10 }}>
+      {blocks.map(([t, items], i) => (
+        <View key={t} style={s.tCard}>
+          <TouchableOpacity onPress={() => setOpenI(openI === i ? -1 : i)} style={s.accHead}>
+            <Text style={[s.tName, { flex: 1 }]}>{t}</Text>
+            <Text style={s.ddCaret}>{openI === i ? '▴' : '▾'}</Text>
+          </TouchableOpacity>
+          {openI === i ? (
+            <View style={s.accBody}>
+              {items.map(x => <Text key={x} style={[s.txt, { lineHeight: 22 }]}>• {x}</Text>)}
+            </View>
+          ) : null}
+        </View>
+      ))}
+    </View>
   );
 }
 
@@ -2670,7 +2679,6 @@ export default function App() {
              tab === 'pay' ? <Finance c={c} sess={sess} setSess={setSess} meId={meId} /> :
              tab === 'admin' && isAdmin ? <Admin c={c} data={data} /> :
              <Rules />}
-            <Text style={[s.small, { textAlign: 'center' }]}>سحب للأسفل باش تحدث</Text>
           </ScrollView>
           )}
           {/* L-bar dyal l-te7t b7al FPL: les pages l-mohimmin, w "المزيد" fiha kolchi. */}
@@ -2788,6 +2796,8 @@ const s = StyleSheet.create({
   hCount: { alignItems: 'center', minWidth: 62 },
   hCountN: { fontSize: 16, fontWeight: '900', color: C.donkey },
   hCountDH: { fontSize: 12, fontWeight: '900', color: C.bad },
+  accHead: { flexDirection: 'row-reverse', alignItems: 'center', gap: 8, paddingHorizontal: 14, paddingVertical: 14 },
+  accBody: { paddingHorizontal: 14, paddingBottom: 14, gap: 6, borderTopWidth: 1, borderColor: C.line, paddingTop: 10 },
   tTabs: { flexDirection: 'row-reverse', backgroundColor: C.pitch, borderRadius: 14, padding: 4, gap: 4 },
   tTab: { flex: 1, paddingVertical: 8, borderRadius: 10, alignItems: 'center' },
   tTabOn: { backgroundColor: C.neon },
@@ -3018,11 +3028,11 @@ const s = StyleSheet.create({
   barL: { fontSize: 10, color: C.muted, marginTop: 2 },
   chip: { paddingVertical: 6, paddingHorizontal: 10, borderRadius: 999, borderWidth: 1, borderColor: C.line },
   chipT: { fontSize: 12, color: C.muted, fontWeight: '600' },
-  gwNav: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: C.pitch, paddingHorizontal: 8, paddingVertical: 8 },
-  arrow: { width: 44, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.12)' },
-  arrowT: { color: '#fff', fontSize: 28, fontWeight: '700', marginTop: -4 },
-  gwBtn: { flex: 1, marginHorizontal: 8, paddingVertical: 9, borderRadius: 999, backgroundColor: 'rgba(255,255,255,0.12)', alignItems: 'center' },
-  gwBtnT: { color: '#fff', fontWeight: '800', fontSize: 15 },
+  gwNav: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: C.pitch, paddingHorizontal: 6, paddingVertical: 6 },
+  arrow: { width: 36, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.12)' },
+  arrowT: { color: '#fff', fontSize: 24, fontWeight: '700', marginTop: -3 },
+  gwBtn: { flex: 1, marginHorizontal: 6, paddingVertical: 7, borderRadius: 999, backgroundColor: 'rgba(255,255,255,0.12)', alignItems: 'center' },
+  gwBtnT: { color: '#fff', fontWeight: '800', fontSize: 14 },
   gwSum: { flexDirection: 'row-reverse', paddingVertical: 12 },
   gwSumBox: { flex: 1, alignItems: 'center' },
   gwSumN: { fontSize: 24, fontWeight: '900', color: C.pitch, fontVariant: ['tabular-nums'] },
