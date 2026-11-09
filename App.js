@@ -848,100 +848,55 @@ function Matches({ data, meId, refreshControl }) {
   );
 }
 
-// Jadwal 3am kayt-rattab b l-3amoud (b7al AG Grid): smiya tabta 3la l-imin, l-b9iya kayt-scrollaw.
-function SortGrid({ cols, rows, initial, nameCell, onRow, meId, page = 60, nameW = 150 }) {
-  const [sort, setSort] = useState(initial || { k: cols[0].k, dir: -1 });
-  const [limit, setLimit] = useState(page);
-  const col = cols.find(x => x.k === sort.k) || cols[0];
-  const val = x => (col.get ? col.get(x) : x[col.k]);
-  const cmp = (a, b) => {
-    const va = val(a), vb = val(b);
-    if (col.str) return sort.dir * String(va || '￿').localeCompare(String(vb || '￿'));
-    if (va == null && vb == null) return 0;
-    if (va == null) return 1;
-    if (vb == null) return -1;
-    return sort.dir * (va - vb);
-  };
-  const sorted = [...rows].sort(cmp);
-  const shown = sorted.slice(0, limit);
-  const press = k => { setLimit(page); setSort(st => (st.k === k ? { k, dir: -st.dir } : { k, dir: cols.find(x => x.k === k).asc ? 1 : -1 })); };
-  const head = useRef(null);
-  const body = useRef(null);
-  const width = cols.reduce((a, x) => a + x.w, 0);
-  const toEnd = () => { head.current && head.current.scrollToEnd({ animated: false }); body.current && body.current.scrollToEnd({ animated: false }); };
-  const cell = (x, cl) => {
-    if (cl.render) return cl.render(x);
-    const v = cl.get ? cl.get(x) : x[cl.k];
-    if (v == null) return <Text style={s.gridDim}>–</Text>;
-    if (!v && cl.zero) return <Text style={s.gridDim}>{cl.zero}</Text>;
-    const color = typeof cl.color === 'function' ? cl.color(v, x) : cl.color;
-    return <Text style={[s.gridNum, cl.bold && { fontWeight: '900', fontSize: 15 }, color && { color }]} numberOfLines={1}>{cl.fmt ? cl.fmt(v, x) : v}</Text>;
-  };
-  return (
-    <View style={{ flex: 1 }}>
-      <View style={[s.gridRow, s.gridHeadRow]}>
-        <View style={[s.gridName, s.gridH, { height: 44, width: nameW }]}><Text style={s.gridHT}># · اللاعب</Text></View>
-        <ScrollView ref={head} horizontal scrollEnabled={false} showsHorizontalScrollIndicator={false} style={{ flex: 1, direction: 'ltr' }}>
-          <View style={{ flexDirection: 'row-reverse', width }}>
-            {cols.map(cl => {
-              const on = sort.k === cl.k;
-              return (
-                <TouchableOpacity key={cl.k} onPress={() => press(cl.k)} style={[s.gridH, { width: cl.w }, on && s.gridHOn]}>
-                  <Text style={[s.gridHT, on && { color: C.pitch }]} numberOfLines={2}>{cl.t}</Text>
-                  <Text style={[s.gridArrow, on && { color: C.pink }]}>{on ? (sort.dir < 0 ? '▼' : '▲') : '⇅'}</Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-        </ScrollView>
-      </View>
-      <ScrollView style={{ flex: 1 }}>
-        <View style={s.gridRow}>
-          <View style={[s.gridName, { width: nameW }]}>
-            {shown.map((x, i) => (
-              <TouchableOpacity key={x.id} onPress={() => onRow && onRow(x)} style={[s.gridNameCell, i % 2 && s.gridAlt, x.id === meId && { backgroundColor: C.me }]}>
-                <View style={[s.rk, { width: 24, height: 24 }]}><Text style={[s.rkT, { fontSize: 10 }]}>{i + 1}</Text></View>
-                <View style={{ flex: 1 }}>{nameCell(x)}</View>
-              </TouchableOpacity>
-            ))}
-          </View>
-          <ScrollView ref={body} horizontal style={{ flex: 1, direction: 'ltr' }} onContentSizeChange={toEnd} onLayout={toEnd}
-            scrollEventThrottle={16} onScroll={e => head.current && head.current.scrollTo({ x: e.nativeEvent.contentOffset.x, animated: false })}>
-            <View style={{ width }}>
-              {shown.map((x, i) => (
-                <TouchableOpacity key={x.id} activeOpacity={0.7} onPress={() => onRow && onRow(x)} style={[s.gridCells, i % 2 && s.gridAlt, x.id === meId && { backgroundColor: C.me }]}>
-                  {cols.map(cl => <View key={cl.k} style={[s.gridCell, { width: cl.w }, sort.k === cl.k && s.gridCellOn]}>{cell(x, cl)}</View>)}
-                </TouchableOpacity>
-              ))}
-            </View>
-          </ScrollView>
-        </View>
-        {sorted.length > limit ? (
-          <TouchableOpacity onPress={() => setLimit(l => l + page)} style={s.moreBtn}>
-            <Text style={s.moreBtnT}>عرض المزيد ({sorted.length - limit} باقيين)</Text>
-          </TouchableOpacity>
-        ) : null}
-      </ScrollView>
-    </View>
-  );
-}
-
 // Safhat l-kachafa: les joueurs l-7a9i9iyin (points, bonus, ownership, prix, transferts) w
 // l-intiqalat dyal l-ligue (chkoun jab chkoun w chkoun ba3o) + dyal FPL kamla.
 const fmtK = n => (n >= 1e6 ? (n / 1e6).toFixed(1) + 'M' : n >= 1e3 ? Math.round(n / 1e3) + 'k' : String(n || 0));
 const iso2 = t => `⁦${t}⁩`;
-function Scout({ c, data, refreshControl }) {
+const POS_TAG = { 1: ['GKP', '#ffd400', C.ink], 2: ['DEF', '#00ff85', C.ink], 3: ['MID', '#04f5ff', C.ink], 4: ['FWD', '#e90052', '#fff'] };
+const SCOUT_SORTS = [
+  ['total', 'النقاط', v => v],
+  ['ev', 'هاد الجولة', v => v],
+  ['form', 'الفورم', v => v.toFixed(1)],
+  ['bonus', 'البونيس', v => v],
+  ['sel', 'الامتلاك', v => v.toFixed(1) + '%'],
+  ['tin', '📥 شراو', fmtK],
+  ['tout', '📤 باعو', fmtK],
+  ['price', 'السعر', v => iso2('£' + v.toFixed(1))],
+  ['xgi', 'xGI', v => v.toFixed(2)],
+  ['ict', 'ICT', v => v.toFixed(1)],
+  ['ep', 'المتوقع', v => v.toFixed(1)],
+  ['g', 'الأهداف', v => v],
+  ['a', 'الأسيست', v => v],
+  ['cs', 'Clean sheet', v => v],
+];
+function PlayerPhoto({ pl, size = 46 }) {
+  const [i, setI] = useState(0);
+  const urls = pl.c ? photoUrls(pl.c) : [];
+  return (
+    <View style={[s.scPhoto, { width: size, height: size, borderRadius: size / 2 }]}>
+      {i < urls.length
+        ? <Image source={{ uri: urls[i] }} style={{ width: size, height: size * 1.1, marginTop: size * 0.12 }} resizeMode="cover" onError={() => setI(i + 1)} />
+        : <Text style={s.miniInit}>{(pl.n || '?').slice(0, 2)}</Text>}
+    </View>
+  );
+}
+
+function Scout({ c, data, meId, refreshControl }) {
   const [view, setView] = useState('players');
   const [pos, setPos] = useState(0);
+  const [onlyMine, setOnlyMine] = useState(false);
   const [q, setQ] = useState('');
+  const [sortK, setSortK] = useState('total');
+  const [limit, setLimit] = useState(40);
   const [sel, setSel] = useState(null);
   const [ctx, setCtx] = useState(null);
   const players = data.players || {};
   const teamS = id => ((data.teamInfo || {})[id] || {}).s || (data.teams || {})[id] || '';
-  const lp = Object.values((data.leaguePicks || {}).by || {});
+  const lpBy = (data.leaguePicks || {}).by || {};
+  const nL = Object.keys(lpBy).length;
   const own = {};
-  lp.forEach(t => (t.picks || []).forEach(pk => { own[pk.element] = (own[pk.element] || 0) + 1; }));
-  const nL = lp.length;
+  Object.values(lpBy).forEach(t => (t.picks || []).forEach(pk => { own[pk.element] = (own[pk.element] || 0) + 1; }));
+  const mine = Object.fromEntries(((lpBy[meId] || {}).picks || []).map(pk => [pk.element, pk]));
 
   const openPlayer = async el => {
     let g = ctx;
@@ -953,40 +908,15 @@ function Scout({ c, data, refreshControl }) {
     setSel({ p: { element: el, eff: 1, bonus, pts: (lv.total_points || 0) + bonus, base: (lv.total_points || 0) + bonus }, team: { gw: data.current, explain: g ? g.explain : {}, byTeam: g ? g.byTeam : {} } });
   };
 
-  const rows = useMemo(() => Object.entries(players).map(([id, pl]) => ({ id: +id, ...pl, own: own[id] || 0, sel: +pl.sel || 0, form: +pl.form || 0, ppg: +pl.ppg || 0 })), [data]);
+  const rows = useMemo(() => Object.entries(players).filter(([, pl]) => pl.t !== 5)
+    .map(([id, pl]) => ({ id: +id, ...pl, sel: +pl.sel || 0, form: +pl.form || 0, ppg: +pl.ppg || 0 })), [data]);
   const needle = q.trim().toLowerCase();
-  const list = rows.filter(r => (!pos || r.t === pos) && r.t !== 5 && (!needle || (r.n + ' ' + r.full).toLowerCase().includes(needle) || teamS(r.team).toLowerCase() === needle));
-  const gw = data.current;
-  const cols = [
-    { k: 'ev', t: gw ? `GW${gw}` : 'الجولة', w: 50, bold: true },
-    { k: 'total', t: 'المجموع', w: 58 },
-    { k: 'bonus', t: '★ بونيس', w: 54, color: '#c99a00', zero: '·' },
-    { k: 'sel', t: 'امتلاك %', w: 62, fmt: v => v.toFixed(1) },
-    { k: 'own', t: `👥 الليگ`, w: 58, zero: '·', fmt: v => `${v}/${nL}` },
-    { k: 'form', t: 'الفورم', w: 52, fmt: v => v.toFixed(1) },
-    { k: 'price', t: 'السعر', w: 56, fmt: v => iso2('£' + v.toFixed(1)) },
-    { k: 'cc', t: '± السعر', w: 56, zero: '·', fmt: v => (v > 0 ? '+' : '') + v.toFixed(1), color: v => (v > 0 ? C.good : C.bad) },
-    { k: 'tin', t: '📥 شراو', w: 62, fmt: fmtK, color: C.good },
-    { k: 'tout', t: '📤 باعو', w: 62, fmt: fmtK, color: C.bad },
-    { k: 'net', t: 'الفرق', w: 60, get: x => (x.tin || 0) - (x.tout || 0), fmt: v => (v >= 0 ? '+' : '−') + fmtK(Math.abs(v)), color: v => (v >= 0 ? C.good : C.bad) },
-    { k: 'g', t: '⚽', w: 40, zero: '·' },
-    { k: 'a', t: '🅰️', w: 40, zero: '·' },
-    { k: 'cs', t: 'CS', w: 40, zero: '·' },
-    { k: 'dc', t: 'DC', w: 44, zero: '·' },
-    { k: 'xgi', t: 'xGI', w: 50, fmt: v => v.toFixed(1), zero: '·' },
-    { k: 'ict', t: 'ICT', w: 52, fmt: v => v.toFixed(0) },
-    { k: 'bps', t: 'BPS', w: 52 },
-    { k: 'ppg', t: 'PPG', w: 48, fmt: v => v.toFixed(1) },
-    { k: 'min', t: 'دقايق', w: 56 },
-    { k: 'ep', t: 'xPts جاية', w: 62, fmt: v => v.toFixed(1) },
-  ];
-
-  const nameCell = x => (
-    <>
-      <Text style={[s.txt, s.bold, { fontSize: 13, writingDirection: 'ltr', textAlign: 'right' }]} numberOfLines={1}>{x.n}{x.st && x.st !== 'a' ? ' ⚠️' : ''}</Text>
-      <Text style={[s.small, { fontSize: 10 }]} numberOfLines={1}>{teamS(x.team)} · {POS_AR[x.t]}</Text>
-    </>
-  );
+  const sortDef = SCOUT_SORTS.find(x => x[0] === sortK);
+  const list = rows
+    .filter(r => (!pos || r.t === pos) && (!onlyMine || mine[r.id]) && (!needle || (r.n + ' ' + r.full).toLowerCase().includes(needle) || teamS(r.team).toLowerCase() === needle))
+    .sort((a, b) => (b[sortK] || 0) - (a[sortK] || 0) || b.total - a.total);
+  const shown = list.slice(0, limit);
+  const reset = f => v => { f(v); setLimit(40); };
 
   const Seg = (
     <View style={s.seg}>
@@ -997,41 +927,93 @@ function Scout({ c, data, refreshControl }) {
       ))}
     </View>
   );
-
   const sheet = sel ? <PlayerSheet p={sel.p} team={sel.team} data={data} c={c} onClose={() => setSel(null)} /> : null;
 
   if (view === 'transfers') {
     return (
       <View style={s.fixedPage}>
         {Seg}
-        <ScoutTransfers c={c} data={data} teamS={teamS} openPlayer={openPlayer} refreshControl={refreshControl} />
+        <ScoutTransfers c={c} data={data} teamS={teamS} openPlayer={openPlayer} refreshControl={refreshControl} mine={mine} />
         {sheet}
       </View>
     );
   }
+
+  const card = (x, i) => {
+    const pk = mine[x.id];
+    const tag = POS_TAG[x.t] || ['', C.line, C.ink];
+    const role = pk ? (pk.is_captain ? (pk.multiplier === 3 ? 'TC' : 'C') : pk.is_vice_captain ? 'V' : pk.position > 11 ? 'بنك' : null) : null;
+    return (
+      <TouchableOpacity key={x.id} activeOpacity={0.8} onPress={() => openPlayer(x.id)} style={[s.scCard, pk && s.scCardMine]}>
+        <Text style={s.scRank}>{i + 1}</Text>
+        <View>
+          <PlayerPhoto pl={x} />
+          {pk ? <View style={s.scMineDot}><Text style={s.scMineDotT}>✓</Text></View> : null}
+        </View>
+        <View style={{ flex: 1, gap: 3 }}>
+          <View style={{ flexDirection: 'row-reverse', alignItems: 'center', gap: 6 }}>
+            <Text style={s.scName} numberOfLines={1}>{x.n}</Text>
+            {x.st && x.st !== 'a' ? <Text style={{ fontSize: 12 }}>{x.st === 'i' || x.st === 's' ? '🚑' : '⚠️'}</Text> : null}
+          </View>
+          <View style={{ flexDirection: 'row-reverse', alignItems: 'center', gap: 5, flexWrap: 'wrap' }}>
+            <View style={[s.scPos, { backgroundColor: tag[1] }]}><Text style={[s.scPosT, { color: tag[2] }]}>{tag[0]}</Text></View>
+            <Text style={s.scTeam}>{teamS(x.team)}</Text>
+            <Text style={s.scPrice}>{iso2('£' + x.price.toFixed(1))}</Text>
+            {x.cc ? <Text style={[s.scTeam, { color: x.cc > 0 ? C.good : C.bad }]}>{x.cc > 0 ? '▲' : '▼'}</Text> : null}
+            {pk ? <View style={s.scMineTag}><Text style={s.scMineTagT}>عندي{role ? ' · ' + role : ''}</Text></View> : null}
+            {own[x.id] ? <Text style={s.scTeam}>👥{own[x.id]}/{nL}</Text> : null}
+          </View>
+          <Text style={s.scSub} numberOfLines={1}>
+            GW {x.ev} · {x.total} pts · ★{x.bonus} · {x.sel.toFixed(1)}%
+          </Text>
+        </View>
+        <View style={s.scBig}>
+          <Text style={s.scBigN}>{sortDef[2](x[sortK] || 0)}</Text>
+          <Text style={s.scBigL} numberOfLines={1}>{sortDef[1]}</Text>
+        </View>
+      </TouchableOpacity>
+    );
+  };
+
   return (
     <View style={s.fixedPage}>
       {Seg}
-      <View style={[s.card, s.fixedCard]}>
-        <View style={{ padding: 10, gap: 8 }}>
-          <View style={{ flexDirection: 'row-reverse', gap: 6, flexWrap: 'wrap' }}>
-            {[[0, 'الكل'], [1, 'حراس'], [2, 'دفاع'], [3, 'وسط'], [4, 'هجوم']].map(([k, l]) => (
-              <TouchableOpacity key={k} onPress={() => setPos(k)} style={[s.chipBtn, pos === k && s.chipOn]}>
-                <Text style={[s.chipT, pos === k && { color: '#fff' }]}>{l}</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-          <TextInput value={q} onChangeText={setQ} placeholder="🔎 قلب على لاعب ولا فريق (ARS, LIV…)" placeholderTextColor={C.muted} style={s.search} autoCorrect={false} autoCapitalize="none" />
-          <Text style={[s.small, { textAlign: 'center' }]}>{list.length} لاعب · كليكي على العمود باش ترتب · على اللاعب باش تشوف كولشي</Text>
-        </View>
-        <SortGrid key={pos + needle} cols={cols} rows={list} initial={{ k: 'total', dir: -1 }} nameCell={nameCell} onRow={x => openPlayer(x.id)} />
+      <View style={s.scBar}>
+        <TextInput value={q} onChangeText={reset(setQ)} placeholder="🔎 قلب على لاعب ولا فريق (ARS, LIV…)" placeholderTextColor={C.muted} style={s.search} autoCorrect={false} autoCapitalize="none" />
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.scChips} style={{ direction: 'rtl', flexGrow: 0 }}>
+          <TouchableOpacity onPress={() => { setOnlyMine(v => !v); setLimit(40); }} style={[s.chipBtn, onlyMine && { backgroundColor: '#953bff', borderColor: '#953bff' }]}>
+            <Text style={[s.chipT, onlyMine && { color: '#fff' }]}>✓ ديالي</Text>
+          </TouchableOpacity>
+          {[[0, 'الكل'], [1, 'GKP'], [2, 'DEF'], [3, 'MID'], [4, 'FWD']].map(([k, l]) => (
+            <TouchableOpacity key={k} onPress={() => reset(setPos)(k)} style={[s.chipBtn, pos === k && s.chipOn]}>
+              <Text style={[s.chipT, pos === k && { color: '#fff' }]}>{l}</Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.scChips} style={{ direction: 'rtl', flexGrow: 0 }}>
+          <Text style={[s.small, { alignSelf: 'center' }]}>رتّب ب:</Text>
+          {SCOUT_SORTS.map(([k, l]) => (
+            <TouchableOpacity key={k} onPress={() => reset(setSortK)(k)} style={[s.sortChip, sortK === k && s.sortChipOn]}>
+              <Text style={[s.sortChipT, sortK === k && { color: '#fff' }]}>{l}</Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
       </View>
+      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ gap: 8, paddingBottom: 24 }} refreshControl={refreshControl}>
+        {shown.map(card)}
+        {!shown.length ? <Text style={[s.small, { textAlign: 'center', padding: 20 }]}>حتى لاعب ما كيطابق.</Text> : null}
+        {list.length > limit ? (
+          <TouchableOpacity onPress={() => setLimit(l => l + 40)} style={s.moreBtn}>
+            <Text style={s.moreBtnT}>عرض المزيد ({list.length - limit} باقيين)</Text>
+          </TouchableOpacity>
+        ) : null}
+      </ScrollView>
       {sheet}
     </View>
   );
 }
 
-function ScoutTransfers({ c, data, teamS, openPlayer, refreshControl }) {
+function ScoutTransfers({ c, data, teamS, openPlayer, refreshControl, mine = {} }) {
   const players = data.players || {};
   const pn = el => (players[el] || {}).n || '?';
   const ids = (data.managers || []).map(m => m.id);
@@ -1059,8 +1041,9 @@ function ScoutTransfers({ c, data, teamS, openPlayer, refreshControl }) {
   const fall = global.filter(p => p.cc < 0).sort((a, b) => a.cc - b.cc || b.tout - a.tout).slice(0, 8);
 
   const Line = ({ el, right, sub, color }) => (
-    <TouchableOpacity onPress={() => openPlayer(el)} style={s.scLine}>
-      <Text style={[s.txt, s.bold, { flexShrink: 1 }]} numberOfLines={1}>{pn(el)}</Text>
+    <TouchableOpacity onPress={() => openPlayer(el)} style={[s.scLine, mine[el] && { backgroundColor: '#f3e8ff' }]}>
+      <PlayerPhoto pl={players[el] || {}} size={30} />
+      <Text style={[s.txt, s.bold, { flexShrink: 1 }, mine[el] && { color: '#7a1fe0' }]} numberOfLines={1}>{pn(el)}{mine[el] ? ' ✓' : ''}</Text>
       <Text style={s.small}>{teamS((players[el] || {}).team)}</Text>
       <Text style={[s.small, { flex: 1, textAlign: 'left' }]} numberOfLines={1}>{sub || ''}</Text>
       <Text style={[s.gridNum, color && { color }]}>{right}</Text>
@@ -2404,7 +2387,7 @@ export default function App() {
             <View style={{ flex: 1, backgroundColor: C.bg }}>
               {error ? <View style={[s.err, { margin: 14, marginBottom: 0 }]}><Text style={{ color: C.bad, textAlign: 'right' }}>{error}</Text></View> : null}
               {tab === 'table' ? <Classement c={c} data={data} meId={meId} open={open} refreshControl={pullToRefresh} /> :
-               tab === 'scout' ? <Scout c={c} data={data} refreshControl={pullToRefresh} /> :
+               tab === 'scout' ? <Scout c={c} data={data} meId={meId} refreshControl={pullToRefresh} /> :
                tab === 'matches' ? <Matches data={data} meId={meId} refreshControl={pullToRefresh} /> :
                tab === 'hmar' ? <Hmar c={c} open={open} refreshControl={pullToRefresh} /> :
                tab === 'stats' ? <Stats c={c} data={data} meId={meId} open={open} refreshControl={pullToRefresh} /> :
@@ -2532,6 +2515,28 @@ const s = StyleSheet.create({
   fxBonusNT: { color: '#fff', fontSize: 11, fontWeight: '900' },
   fxBpsBar: { width: 70, height: 6, borderRadius: 3, backgroundColor: C.bg, overflow: 'hidden', flexDirection: 'row-reverse' },
   fxBpsFill: { height: 6, backgroundColor: '#953bff', borderRadius: 3 },
+  scBar: { gap: 8 },
+  scChips: { gap: 6, flexDirection: 'row', paddingVertical: 2 },
+  sortChip: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 999, backgroundColor: '#fff', borderWidth: 1, borderColor: C.line },
+  sortChipOn: { backgroundColor: C.pink, borderColor: C.pink },
+  sortChipT: { fontSize: 12, fontWeight: '800', color: C.ink },
+  scCard: { flexDirection: 'row-reverse', alignItems: 'center', gap: 10, backgroundColor: C.card, borderRadius: 16, paddingVertical: 10, paddingHorizontal: 10, borderWidth: 1, borderColor: C.line },
+  scCardMine: { borderColor: '#953bff', borderWidth: 2, backgroundColor: '#faf5ff' },
+  scRank: { width: 22, textAlign: 'center', fontSize: 12, fontWeight: '900', color: C.muted },
+  scPhoto: { backgroundColor: '#efe6f3', overflow: 'hidden', alignItems: 'center', justifyContent: 'center' },
+  scMineDot: { position: 'absolute', bottom: -2, left: -2, width: 18, height: 18, borderRadius: 9, backgroundColor: '#953bff', alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: '#fff' },
+  scMineDotT: { color: '#fff', fontSize: 9, fontWeight: '900' },
+  scName: { fontSize: 15, fontWeight: '900', color: C.ink, textAlign: 'right', flexShrink: 1 },
+  scPos: { borderRadius: 4, paddingHorizontal: 5, paddingVertical: 1 },
+  scPosT: { fontSize: 9, fontWeight: '900' },
+  scTeam: { fontSize: 11, fontWeight: '800', color: C.muted },
+  scPrice: { fontSize: 11, fontWeight: '800', color: C.pitch },
+  scMineTag: { borderRadius: 999, backgroundColor: '#953bff', paddingHorizontal: 7, paddingVertical: 1 },
+  scMineTagT: { color: '#fff', fontSize: 10, fontWeight: '900' },
+  scSub: { fontSize: 11, color: C.muted, textAlign: 'right' },
+  scBig: { minWidth: 62, alignItems: 'center', backgroundColor: C.pitch, borderRadius: 12, paddingVertical: 6, paddingHorizontal: 6 },
+  scBigN: { color: '#fff', fontSize: 18, fontWeight: '900', fontVariant: ['tabular-nums'] },
+  scBigL: { color: C.neon, fontSize: 9, fontWeight: '800', maxWidth: 70 },
   moreBtn: { margin: 12, padding: 12, borderRadius: 12, backgroundColor: C.bg, alignItems: 'center' },
   moreBtnT: { color: C.pitch, fontWeight: '800', fontSize: 13 },
   chipBtn: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 999, backgroundColor: C.bg, borderWidth: 1, borderColor: C.line },
