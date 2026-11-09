@@ -1018,113 +1018,214 @@ function Scout({ c, data, meId, refreshControl }) {
 
 function ScoutTransfers({ c, data, teamS, openPlayer, refreshControl, mine = {} }) {
   const players = data.players || {};
-  const pn = el => (players[el] || {}).n || '?';
+  const pl = el => players[el] || {};
   const ids = (data.managers || []).map(m => m.id);
+  const [tab, setTab] = useState('world');
+  const [dir, setDir] = useState('in');
   const [tr, setTr] = useState(null);
   const [gw, setGw] = useState(null);
   useEffect(() => {
     let alive = true;
     Promise.all(ids.map(id => getJson(`/entry/${id}/transfers/`).then(x => x.map(t => ({ ...t, entry: id }))).catch(() => [])))
-      .then(all => { if (!alive) return; const flat = all.flat(); setTr(flat); setGw(Math.max(0, ...flat.map(t => t.event)) || null); });
+      .then(all => { if (!alive) return; const flat = all.flat(); setTr(flat); setGw(g => g || Math.max(0, ...flat.map(t => t.event)) || null); });
     return () => { alive = false; };
   }, [data.fetchedAt]);
-  const gws = tr ? [...new Set(tr.map(t => t.event))].sort((a, b) => b - a) : [];
-  const now = (tr || []).filter(t => t.event === gw);
-  const tally = key => {
-    const m = {};
-    now.forEach(t => { (m[t[key]] = m[t[key]] || []).push(t.entry); });
-    return Object.entries(m).map(([el, who]) => ({ el: +el, who })).sort((a, b) => b.who.length - a.who.length).slice(0, 8);
-  };
-  const first = id => (c.per[id] ? c.per[id].m.name.split(' ')[0] : '?');
-  const byMgr = {};
-  now.forEach(t => { (byMgr[t.entry] = byMgr[t.entry] || []).push(t); });
-  const global = Object.entries(players).filter(([, p]) => p.t !== 5).map(([id, p]) => ({ el: +id, ...p }));
-  const top = (f, n = 8) => [...global].sort((a, b) => f(b) - f(a)).slice(0, n);
-  const rise = global.filter(p => p.cc > 0).sort((a, b) => b.cc - a.cc || b.tin - a.tin).slice(0, 8);
-  const fall = global.filter(p => p.cc < 0).sort((a, b) => a.cc - b.cc || b.tout - a.tout).slice(0, 8);
 
   const nextGw = data.nextDeadline ? (data.current || 0) + 1 : null;
-  const gwTag = nextGw ? `GW${nextGw}` : 'هاد الجولة';
+  const gwTag = nextGw ? `GW${nextGw}` : `GW${data.current || ''}`;
   const hidden = nextGw && data.nextDeadline > Date.now();
-  const Line = ({ el, right, sub, color }) => (
-    <TouchableOpacity onPress={() => openPlayer(el)} style={[s.scLine, mine[el] && { backgroundColor: '#f3e8ff' }]}>
-      <PlayerPhoto pl={players[el] || {}} size={30} />
-      <Text style={[s.txt, s.bold, { flexShrink: 1 }, mine[el] && { color: '#7a1fe0' }]} numberOfLines={1}>{pn(el)}{mine[el] ? ' ✓' : ''}</Text>
-      <Text style={s.small}>{teamS((players[el] || {}).team)}</Text>
-      <Text style={[s.small, { flex: 1, textAlign: 'left' }]} numberOfLines={1}>{sub || ''}</Text>
-      <Text style={[s.gridNum, color && { color }]}>{right}</Text>
-    </TouchableOpacity>
+  const first = id => (c.per[id] ? c.per[id].m.name.split(' ')[0] : '?');
+  const price = v => iso2('£' + v.toFixed(1));
+
+  // Ligne dyal joueur m3a bar (b7al l-graphiques): soura, smiya, fari9, l-ar9am.
+  const Row = ({ el, i, value, max, label, color, who }) => {
+    const p = pl(el);
+    const tag = POS_TAG[p.t] || ['', C.line, C.ink];
+    const isMine = !!mine[el];
+    return (
+      <TouchableOpacity activeOpacity={0.8} onPress={() => openPlayer(el)} style={[s.tRow, isMine && s.tRowMine]}>
+        <Text style={s.tRank}>{i + 1}</Text>
+        <View>
+          <PlayerPhoto pl={p} size={40} />
+          {isMine ? <View style={s.scMineDot}><Text style={s.scMineDotT}>✓</Text></View> : null}
+        </View>
+        <View style={{ flex: 1, gap: 4 }}>
+          <View style={{ flexDirection: 'row-reverse', alignItems: 'center', gap: 6 }}>
+            <Text style={[s.tName, isMine && { color: '#7a1fe0' }]} numberOfLines={1}>{p.n || '?'}</Text>
+            <View style={[s.scPos, { backgroundColor: tag[1] }]}><Text style={[s.scPosT, { color: tag[2] }]}>{tag[0]}</Text></View>
+            <Text style={s.scTeam}>{teamS(p.team)}</Text>
+            {p.price != null ? <Text style={s.scPrice}>{price(p.price)}</Text> : null}
+          </View>
+          <View style={s.tBarTrack}>
+            <View style={[s.tBar, { width: `${Math.max(3, (value / (max || 1)) * 100)}%`, backgroundColor: color }]} />
+          </View>
+          {who ? <Text style={s.tWho} numberOfLines={1}>{who}</Text> : null}
+        </View>
+        <View style={{ alignItems: 'center', minWidth: 54 }}>
+          <Text style={[s.tVal, { color }]}>{label}</Text>
+        </View>
+      </TouchableOpacity>
+    );
+  };
+
+  const Tabs = (
+    <View style={s.tTabs}>
+      {[['world', '🌍 العالم'], ['league', '👥 الليگ'], ['price', '💹 الأسعار']].map(([k, l]) => (
+        <TouchableOpacity key={k} onPress={() => setTab(k)} style={[s.tTab, tab === k && s.tTabOn]}>
+          <Text style={[s.tTabT, tab === k && s.tTabTOn]}>{l}</Text>
+        </TouchableOpacity>
+      ))}
+    </View>
+  );
+  const InOut = (
+    <View style={s.tInOut}>
+      {[['in', '📥 دخلو', C.good], ['out', '📤 خرجو', C.bad]].map(([k, l, col]) => (
+        <TouchableOpacity key={k} onPress={() => setDir(k)} style={[s.tIO, dir === k && { backgroundColor: col, borderColor: col }]}>
+          <Text style={[s.tIOT, dir === k && { color: '#fff' }]}>{l}</Text>
+        </TouchableOpacity>
+      ))}
+    </View>
   );
 
+  let body;
+  if (tab === 'world') {
+    const all = Object.entries(players).filter(([, p]) => p.t !== 5).map(([id, p]) => ({ el: +id, ...p }));
+    const total = all.reduce((t, p) => t + (p.tin || 0), 0);
+    const key = dir === 'in' ? 'tin' : 'tout';
+    const top = [...all].sort((a, b) => (b[key] || 0) - (a[key] || 0)).slice(0, 15);
+    const max = top.length ? top[0][key] : 1;
+    const myIn = all.filter(p => mine[p.el]).sort((a, b) => (b.tout || 0) - (a.tout || 0))[0];
+    body = (
+      <>
+        <View style={s.tHero}>
+          <Text style={s.tHeroK}>{gwTag} · من بعد آخر deadline</Text>
+          <View style={{ flexDirection: 'row-reverse', gap: 10 }}>
+            <View style={s.tHeroBox}><Text style={s.tHeroN}>{fmtK(total)}</Text><Text style={s.tHeroL}>انتقال فالعالم</Text></View>
+            <View style={s.tHeroBox}><Text style={s.tHeroN} numberOfLines={1}>{top.length ? pl(top[0].el).n : '–'}</Text><Text style={s.tHeroL}>{dir === 'in' ? 'الأكثر شراء' : 'الأكثر بيع'}</Text></View>
+          </View>
+          {data.nextDeadline ? <Text style={s.tHeroSub}>⏰ الـ deadline: {formatMoroccoDate(data.nextDeadline)}</Text> : null}
+          {myIn && myIn.tout ? <Text style={s.tHeroSub}>📤 أكثر لاعب ديالك كيبيعوه: {myIn.n} ({fmtK(myIn.tout)})</Text> : null}
+        </View>
+        {InOut}
+        <View style={s.tCard}>
+          {top.map((p, i) => <Row key={p.el} el={p.el} i={i} value={p[key] || 0} max={max} label={fmtK(p[key] || 0)} color={dir === 'in' ? C.good : C.bad} />)}
+        </View>
+        <Text style={[s.small, { textAlign: 'center' }]}>الأرقام كتجي من FPL: مجموع الانتقالات ديال كاع المدربين فالعالم من آخر deadline.</Text>
+      </>
+    );
+  } else if (tab === 'price') {
+    const all = Object.entries(players).filter(([, p]) => p.t !== 5).map(([id, p]) => ({ el: +id, ...p }));
+    const up = all.filter(p => p.cc > 0).sort((a, b) => b.cc - a.cc || b.tin - a.tin);
+    const down = all.filter(p => p.cc < 0).sort((a, b) => a.cc - b.cc || b.tout - a.tout);
+    const list = dir === 'in' ? up : down;
+    body = (
+      <>
+        <View style={s.tHero}>
+          <Text style={s.tHeroK}>تبدّل الأسعار · {gwTag}</Text>
+          <View style={{ flexDirection: 'row-reverse', gap: 10 }}>
+            <View style={s.tHeroBox}><Text style={[s.tHeroN, { color: C.neon }]}>▲ {up.length}</Text><Text style={s.tHeroL}>طلعو</Text></View>
+            <View style={s.tHeroBox}><Text style={[s.tHeroN, { color: '#ff6b9a' }]}>▼ {down.length}</Text><Text style={s.tHeroL}>هبطو</Text></View>
+          </View>
+        </View>
+        <View style={s.tInOut}>
+          {[['in', '📈 طلعو', C.good], ['out', '📉 هبطو', C.bad]].map(([k, l, col]) => (
+            <TouchableOpacity key={k} onPress={() => setDir(k)} style={[s.tIO, dir === k && { backgroundColor: col, borderColor: col }]}>
+              <Text style={[s.tIOT, dir === k && { color: '#fff' }]}>{l}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+        <View style={s.tCard}>
+          {list.length ? list.slice(0, 25).map((p, i) => (
+            <Row key={p.el} el={p.el} i={i} value={dir === 'in' ? p.tin || 0 : p.tout || 0} max={Math.max(1, ...list.slice(0, 25).map(x => (dir === 'in' ? x.tin : x.tout) || 0))}
+              label={(p.cc > 0 ? '+' : '') + p.cc.toFixed(1)} color={dir === 'in' ? C.good : C.bad} who={`${dir === 'in' ? '📥' : '📤'} ${fmtK(dir === 'in' ? p.tin : p.tout)} ${dir === 'in' ? 'شراوه' : 'باعوه'}`} />
+          )) : <Text style={[s.small, { textAlign: 'center', padding: 20 }]}>حتى لاعب ما تبدّل السعر ديالو.</Text>}
+        </View>
+      </>
+    );
+  } else {
+    const gws = tr ? [...new Set(tr.map(t => t.event))].sort((a, b) => b - a) : [];
+    const now = (tr || []).filter(t => t.event === gw);
+    const tally = k => {
+      const m = {};
+      now.forEach(t => { (m[t[k]] = m[t[k]] || []).push(t.entry); });
+      return Object.entries(m).map(([el, who]) => ({ el: +el, who })).sort((a, b) => b.who.length - a.who.length).slice(0, 10);
+    };
+    const list = tally(dir === 'in' ? 'element_in' : 'element_out');
+    const byMgr = {};
+    now.forEach(t => { (byMgr[t.entry] = byMgr[t.entry] || []).push(t); });
+    const mgrs = Object.entries(byMgr).sort((a, b) => b[1].length - a[1].length);
+    const hits = mgrs.reduce((t, [id]) => t + (((c.per[id] || {}).m || { gws: {} }).gws[gw] || {}).h || 0, 0);
+    body = !tr ? <ActivityIndicator color={C.pink} style={{ padding: 30 }} /> : (
+      <>
+        {hidden ? (
+          <View style={s.scLock}><Text style={s.scLockT}>🔒 تبديلات GW{nextGw} ديال الليگ كيبانو من بعد الـ deadline · {formatMoroccoDate(data.nextDeadline)}</Text></View>
+        ) : null}
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ direction: 'rtl', flexGrow: 0 }} contentContainerStyle={s.scChips}>
+          {gws.map(g => (
+            <TouchableOpacity key={g} onPress={() => setGw(g)} style={[s.chipBtn, gw === g && s.chipOn]}>
+              <Text style={[s.chipT, gw === g && { color: '#fff' }]}>GW{g}</Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+        <View style={s.tHero}>
+          <Text style={s.tHeroK}>الليگ · GW{gw}</Text>
+          <View style={{ flexDirection: 'row-reverse', gap: 10 }}>
+            <View style={s.tHeroBox}><Text style={s.tHeroN}>{now.length}</Text><Text style={s.tHeroL}>انتقال</Text></View>
+            <View style={s.tHeroBox}><Text style={s.tHeroN}>{mgrs.length}/{ids.length}</Text><Text style={s.tHeroL}>بدّلو</Text></View>
+            <View style={s.tHeroBox}><Text style={[s.tHeroN, hits && { color: '#ff6b9a' }]}>{hits ? '−' + hits : 0}</Text><Text style={s.tHeroL}>hits</Text></View>
+          </View>
+        </View>
+        {now.length ? (
+          <>
+            {InOut}
+            <View style={s.tCard}>
+              {list.map((x, i) => <Row key={x.el} el={x.el} i={i} value={x.who.length} max={list[0].who.length} label={'×' + x.who.length} color={dir === 'in' ? C.good : C.bad} who={x.who.map(first).join('، ')} />)}
+            </View>
+            <Text style={s.tSection}>شكون بدّل شنو</Text>
+            {mgrs.map(([id, ts]) => {
+              const h = (((c.per[id] || {}).m || { gws: {} }).gws[gw] || {}).h || 0;
+              return (
+                <View key={id} style={[s.tCard, { paddingVertical: 10, gap: 8 }]}>
+                  <View style={{ flexDirection: 'row-reverse', alignItems: 'center', gap: 8, paddingHorizontal: 12 }}>
+                    <Text style={[s.tName, { flex: 1 }]} numberOfLines={1}>{c.per[id] ? c.per[id].m.name : id}</Text>
+                    <View style={s.tCount}><Text style={s.tCountT}>{ts.length} 🔄</Text></View>
+                    {h ? <View style={[s.tCount, { backgroundColor: '#ffe3ec' }]}><Text style={[s.tCountT, { color: C.bad }]}>−{h}</Text></View> : null}
+                  </View>
+                  {ts.map((t, i) => (
+                    <View key={i} style={s.tSwap}>
+                      <TouchableOpacity onPress={() => openPlayer(t.element_in)} style={[s.tSide, { backgroundColor: '#e9fbf1' }]}>
+                        <PlayerPhoto pl={pl(t.element_in)} size={28} />
+                        <View style={{ flex: 1 }}>
+                          <Text style={[s.tSideN, { color: '#0a7a45' }]} numberOfLines={1}>{pl(t.element_in).n || '?'}</Text>
+                          <Text style={s.tSideP}>{price(t.element_in_cost / 10)}</Text>
+                        </View>
+                      </TouchableOpacity>
+                      <Text style={s.tArrow}>⇄</Text>
+                      <TouchableOpacity onPress={() => openPlayer(t.element_out)} style={[s.tSide, { backgroundColor: '#fff0f4' }]}>
+                        <PlayerPhoto pl={pl(t.element_out)} size={28} />
+                        <View style={{ flex: 1 }}>
+                          <Text style={[s.tSideN, { color: C.bad }]} numberOfLines={1}>{pl(t.element_out).n || '?'}</Text>
+                          <Text style={s.tSideP}>{price(t.element_out_cost / 10)}</Text>
+                        </View>
+                      </TouchableOpacity>
+                    </View>
+                  ))}
+                </View>
+              );
+            })}
+          </>
+        ) : <Text style={[s.small, { textAlign: 'center', padding: 14 }]}>حتى واحد ما بدّل ف هاد الجولة.</Text>}
+      </>
+    );
+  }
+
   return (
-    <Sections
-      refreshControl={refreshControl}
-      sections={[
-        {
-          title: `FPL كاملة · ${gwTag}`, sub: 'الانتقالات اللي داروها دابا',
-          body: (
-            <View style={{ paddingBottom: 8 }}>
-              <Text style={s.scHead}>📥 الأكثر شراء</Text>
-              {top(p => p.tin).map(p => <Line key={'gi' + p.el} el={p.el} right={fmtK(p.tin)} sub={iso2('£' + p.price.toFixed(1)) + ' · ' + p.sel + '%'} color={C.good} />)}
-              <Text style={s.scHead}>📤 الأكثر بيع</Text>
-              {top(p => p.tout).map(p => <Line key={'go' + p.el} el={p.el} right={fmtK(p.tout)} sub={iso2('£' + p.price.toFixed(1)) + ' · ' + p.sel + '%'} color={C.bad} />)}
-            </View>
-          ),
-        },
-        {
-          title: 'تبدّل السعر', sub: `من بعد آخر deadline · ${gwTag}`,
-          body: (
-            <View style={{ paddingBottom: 8 }}>
-              <Text style={s.scHead}>📈 طلعو</Text>
-              {rise.length ? rise.map(p => <Line key={'r' + p.el} el={p.el} right={'+' + p.cc.toFixed(1)} sub={iso2('£' + p.price.toFixed(1))} color={C.good} />) : <Text style={[s.small, { textAlign: 'center' }]}>والو</Text>}
-              <Text style={s.scHead}>📉 هبطو</Text>
-              {fall.length ? fall.map(p => <Line key={'f' + p.el} el={p.el} right={p.cc.toFixed(1)} sub={iso2('£' + p.price.toFixed(1))} color={C.bad} />) : <Text style={[s.small, { textAlign: 'center' }]}>والو</Text>}
-            </View>
-          ),
-        },
-        {
-          title: 'انتقالات الليگ', sub: gw ? `GW${gw} · ${now.length} انتقال` : '',
-          body: !tr ? <ActivityIndicator color={C.pink} style={{ padding: 30 }} /> : (
-            <View style={{ paddingBottom: 8 }}>
-              <View style={{ flexDirection: 'row-reverse', gap: 6, flexWrap: 'wrap', padding: 10 }}>
-                {gws.slice(0, 8).map(g => (
-                  <TouchableOpacity key={g} onPress={() => setGw(g)} style={[s.chipBtn, gw === g && s.chipOn]}>
-                    <Text style={[s.chipT, gw === g && { color: '#fff' }]}>GW{g}</Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-              {hidden ? (
-                <View style={s.scLock}>
-                  <Text style={s.scLockT}>🔒 التبديلات ديال GW{nextGw} ف الليگ FPL كتخبيهم حتى يدوز الـ deadline ({formatMoroccoDate(data.nextDeadline)}). من بعد كيبانو هنا بوحدهم.</Text>
-                </View>
-              ) : null}
-              {now.length ? (
-                <>
-                  <Text style={s.scHead}>📥 أكثر لاعبين جابوهم</Text>
-                  {tally('element_in').map(x => <Line key={'i' + x.el} el={x.el} right={'×' + x.who.length} sub={x.who.map(first).join('، ')} color={C.good} />)}
-                  <Text style={s.scHead}>📤 أكثر لاعبين باعوهم</Text>
-                  {tally('element_out').map(x => <Line key={'o' + x.el} el={x.el} right={'×' + x.who.length} sub={x.who.map(first).join('، ')} color={C.bad} />)}
-                </>
-              ) : <Text style={[s.small, { textAlign: 'center', padding: 14 }]}>حتى واحد ما بدّل ف هاد الجولة.</Text>}
-            </View>
-          ),
-        },
-        now.length ? {
-          title: 'شكون بدّل شنو', sub: gw ? `GW${gw}` : '',
-          body: Object.entries(byMgr).sort((a, b) => b[1].length - a[1].length).map(([id, ts]) => (
-            <View key={id} style={s.scMgr}>
-              <Text style={[s.txt, s.bold]} numberOfLines={1}>{c.per[id] ? c.per[id].m.name : id}  <Text style={s.small}>{ts.length} تبديل</Text></Text>
-              {ts.map((t, i) => (
-                <View key={i} style={s.scSwap}>
-                  <Text style={[s.small, { color: C.good, fontWeight: '800' }]} numberOfLines={1}>📥 {pn(t.element_in)} {iso2('£' + (t.element_in_cost / 10).toFixed(1))}</Text>
-                  <Text style={[s.small, { color: C.bad, fontWeight: '800' }]} numberOfLines={1}>📤 {pn(t.element_out)} {iso2('£' + (t.element_out_cost / 10).toFixed(1))}</Text>
-                </View>
-              ))}
-            </View>
-          )),
-        } : null,
-      ].filter(Boolean)}
-    />
+    <View style={{ flex: 1, gap: 10 }}>
+      {Tabs}
+      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ gap: 10, paddingBottom: 24 }} refreshControl={refreshControl}>
+        {body}
+      </ScrollView>
+    </View>
   );
 }
 
@@ -2526,6 +2627,37 @@ const s = StyleSheet.create({
   fxBonusNT: { color: '#fff', fontSize: 11, fontWeight: '900' },
   fxBpsBar: { width: 70, height: 6, borderRadius: 3, backgroundColor: C.bg, overflow: 'hidden', flexDirection: 'row-reverse' },
   fxBpsFill: { height: 6, backgroundColor: '#953bff', borderRadius: 3 },
+  tTabs: { flexDirection: 'row-reverse', backgroundColor: C.pitch, borderRadius: 14, padding: 4, gap: 4 },
+  tTab: { flex: 1, paddingVertical: 8, borderRadius: 10, alignItems: 'center' },
+  tTabOn: { backgroundColor: C.neon },
+  tTabT: { color: '#d9c7dc', fontSize: 13, fontWeight: '800' },
+  tTabTOn: { color: C.pitch },
+  tHero: { backgroundColor: C.pitch, borderRadius: 16, padding: 14, gap: 10 },
+  tHeroK: { color: C.cyan, fontSize: 12, fontWeight: '800', textAlign: 'right' },
+  tHeroBox: { flex: 1, backgroundColor: 'rgba(255,255,255,0.08)', borderRadius: 12, paddingVertical: 8, paddingHorizontal: 10, borderTopWidth: 2, borderColor: C.neon },
+  tHeroN: { color: '#fff', fontSize: 18, fontWeight: '900', textAlign: 'right', fontVariant: ['tabular-nums'] },
+  tHeroL: { color: '#d9c7dc', fontSize: 11, textAlign: 'right' },
+  tHeroSub: { color: '#d9c7dc', fontSize: 12, textAlign: 'right' },
+  tInOut: { flexDirection: 'row-reverse', gap: 8 },
+  tIO: { flex: 1, paddingVertical: 9, borderRadius: 12, alignItems: 'center', backgroundColor: '#fff', borderWidth: 1, borderColor: C.line },
+  tIOT: { fontSize: 13, fontWeight: '900', color: C.ink },
+  tCard: { backgroundColor: C.card, borderRadius: 16, borderWidth: 1, borderColor: C.line, overflow: 'hidden' },
+  tRow: { flexDirection: 'row-reverse', alignItems: 'center', gap: 10, paddingVertical: 10, paddingHorizontal: 12, borderBottomWidth: 1, borderColor: C.line },
+  tRowMine: { backgroundColor: '#faf5ff' },
+  tRank: { width: 18, textAlign: 'center', fontSize: 12, fontWeight: '900', color: C.muted },
+  tName: { fontSize: 14, fontWeight: '900', color: C.ink, textAlign: 'right', flexShrink: 1 },
+  tBarTrack: { height: 6, borderRadius: 3, backgroundColor: C.bg, overflow: 'hidden', flexDirection: 'row-reverse' },
+  tBar: { height: 6, borderRadius: 3 },
+  tWho: { fontSize: 11, color: C.muted, textAlign: 'right' },
+  tVal: { fontSize: 16, fontWeight: '900', fontVariant: ['tabular-nums'] },
+  tSection: { fontSize: 16, fontWeight: '900', color: C.pitch, textAlign: 'right', marginTop: 6 },
+  tCount: { borderRadius: 999, backgroundColor: C.bg, paddingHorizontal: 8, paddingVertical: 2 },
+  tCountT: { fontSize: 11, fontWeight: '900', color: C.pitch },
+  tSwap: { flexDirection: 'row-reverse', alignItems: 'center', gap: 6, paddingHorizontal: 10 },
+  tSide: { flex: 1, flexDirection: 'row-reverse', alignItems: 'center', gap: 6, borderRadius: 10, paddingVertical: 5, paddingHorizontal: 6 },
+  tSideN: { fontSize: 12, fontWeight: '900', textAlign: 'right' },
+  tSideP: { fontSize: 10, color: C.muted, textAlign: 'right' },
+  tArrow: { fontSize: 14, color: C.muted, fontWeight: '900' },
   scBar: { gap: 8 },
   scLock: { marginHorizontal: 12, marginBottom: 6, padding: 10, borderRadius: 12, backgroundColor: '#fff4e5', borderWidth: 1, borderColor: '#ffd8a3' },
   scLockT: { fontSize: 12, color: '#9a5b00', fontWeight: '700', textAlign: 'right', lineHeight: 18 },
