@@ -3,7 +3,7 @@
 import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, TextInput, RefreshControl, Image,
-  ActivityIndicator, StyleSheet, StatusBar, Platform, Modal,
+  ActivityIndicator, StyleSheet, StatusBar, Platform, Modal, AppState,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -66,6 +66,8 @@ async function loadLeague() {
   let entries = league.standings.results;
   if (CONFIG.participants.length) entries = entries.filter(e => CONFIG.participants.includes(e.entry));
   const histories = await Promise.all(entries.map(e => getJson('/entry/' + e.entry + '/history/')));
+  // FPL kat3llem l-jawla "finished" ghir mn b3d ta2kid l-bonus (ymken nhar kaml mn b3d). 3andna
+  // l-jawla katsali rasmiyan m3a nihayat akhir match dyalha (finished_provisional).
   const finished = boot.events.filter(ev => ev.finished).map(ev => ev.id);
   const current = (boot.events.find(ev => ev.is_current) || {}).id || null;
   const managers = entries.map((e, i) => {
@@ -87,7 +89,8 @@ async function loadLeague() {
     min: el.minutes, bonus: el.bonus, xg: el.expected_goals, xa: el.expected_assists, news: el.news,
   }; });
   const teams = {};
-  boot.teams.forEach(t => { teams[t.id] = t.short_name; });
+  const teamInfo = {};
+  boot.teams.forEach(t => { teams[t.id] = t.short_name; teamInfo[t.id] = { n: t.name, s: t.short_name, code: t.code }; });
 
   // L-fari9 dyal kol wa7ed f l-jawla l-7aliya (wla akhir jawla salat): bach n3erfo 3and chkoun
   // kayn kol joueur f l-ligue (ownership, captain…).
@@ -99,9 +102,11 @@ async function loadLeague() {
 
   // Jawla mazal kat-tl3eb: l-history dyal FPL ma kaytbeddelch live, donc kan7esbo l-points
   // dyal kol wa7ed mn l'équipe dyalo + les stats live + bonus provisoire + auto-subs.
+  let gwDone = false;
   if (live) {
     try {
       const ctx = await loadGwContext(current, players);
+      gwDone = ctx.fixtures.length > 0 && ctx.fixtures.every(f => f.finished || f.finished_provisional);
       managers.forEach((m, i) => {
         const pk = allPicks[i];
         if (!pk) return;
@@ -113,14 +118,20 @@ async function loadLeague() {
         const capRow = t.rows.find(r => r.eff >= 2) || t.rows.find(r => r.is_captain);
         const inPlay = counting.filter(r => r.started && !r.done).length;
         const toStart = counting.filter(r => !r.started).length;
-        m.gws[current] = { ...(m.gws[current] || {}), cap: capRow ? capRow.element : null, capVice: !!(capRow && !capRow.is_captain), inPlay, toStart, p: t.total - hit, raw: t.total, h: hit, c: pk.active_chip || '', bench: t.benchPts, tr: (pk.entry_history || {}).event_transfers || 0, live: true, left: t.left, prov: t.provisional };
+        m.gws[current] = { ...(m.gws[current] || {}), cap: capRow ? capRow.element : null, capVice: !!(capRow && !capRow.is_captain), inPlay, toStart, p: t.total - hit, raw: t.total, h: hit, c: pk.active_chip || '', bench: t.benchPts, tr: (pk.entry_history || {}).event_transfers || 0, live: !gwDone, left: t.left, prov: gwDone ? 0 : t.provisional };
       });
     } catch {}
   }
   const events = {};
   boot.events.forEach(ev => { events[ev.id] = { avg: ev.average_entry_score, high: ev.highest_score }; });
   const phases = (boot.phases || []).filter(ph => ph.id > 1).map(ph => ({ id: ph.id, name: ph.name, from: ph.start_event, to: ph.stop_event }));
-  return { leagueName: league.league.name, managers, finished, current, players, teams, leaguePicks, events, phases, fetchedAt: new Date().toISOString() };
+  const nextEv = boot.events.find(ev => ev.is_next);
+  return {
+    leagueName: league.league.name, managers, finished: gwDone ? [...finished, current] : finished, current, players, teams, teamInfo,
+    leaguePicks, events, phases, fetchedAt: new Date().toISOString(),
+    // Mazal FPL ma kemmlat l-jawla (bonus ma t2kedch): kan3awdo njibo b chwiya.
+    pending: !!live, nextDeadline: nextEv ? Date.parse(nextEv.deadline_time) : null,
+  };
 }
 
 // Stats live dyal journée: points dyal kol joueur, les matchs, w l-bonus provisoire (mn l-BPS).
@@ -598,22 +609,182 @@ function DonkeyTimer({ nextGw, onOver }) {
   );
 }
 
+// Safhat l-matchat: kol jawla, l-matchat mrattbin b n-nhar, w ila kliki 3la match kayban kolchi:
+// l-ahdaf, l-passes, l-kartonat, t-tasdiyat, l-bonus (rasmi wla 7asab l-BPS) w top BPS.
+const BADGE = code => `https://resources.premierleague.com/premierleague/badges/70/t${code}.png`;
+const FX_STATS = [
+  ['goals_scored', '⚽', 'أهداف'], ['assists', '🅰️', 'تمريرات حاسمة'], ['own_goals', '🔴', 'ضد المرمى'],
+  ['penalties_saved', '🧤', 'بنالتي تصدى ليه'], ['penalties_missed', '❌', 'بنالتي ضيعو'],
+  ['yellow_cards', '🟨', 'إنذارات'], ['red_cards', '🟥', 'طرد'], ['saves', '🧤', 'تصديات'],
+];
+function TeamBadge({ info }) {
+  const [bad, setBad] = useState(false);
+  if (!info || !info.code || bad) return <View style={[s.fxBadge, s.fxBadgeAlt]}><Text style={s.fxBadgeT}>{info ? info.s : '?'}</Text></View>;
+  return <Image source={{ uri: BADGE(info.code) }} style={s.fxBadge} resizeMode="contain" onError={() => setBad(true)} accessibilityLabel={info.n} />;
+}
+function Matches({ data, refreshControl }) {
+  const list = Array.from({ length: 38 }, (_, i) => i + 1);
+  const [gw, setGw] = useState(data.current || 1);
+  const [fx, setFx] = useState(null);
+  const [err, setErr] = useState(false);
+  const [openId, setOpenId] = useState(null);
+  useEffect(() => {
+    let alive = true;
+    setErr(false);
+    getJson(`/fixtures/?event=${gw}`).then(f => alive && setFx(f)).catch(() => alive && setErr(true));
+    return () => { alive = false; };
+  }, [gw, data.fetchedAt]);
+  useEffect(() => { setFx(null); setOpenId(null); }, [gw]);
+  // Wast l-match: kan-tjeddou kol d9i9a 7tta f had s-safha.
+  const anyLive = (fx || []).some(f => f.started && !f.finished && !f.finished_provisional);
+  useEffect(() => {
+    if (!anyLive) return;
+    const t = setInterval(() => getJson(`/fixtures/?event=${gw}`).then(setFx).catch(() => {}), 60000);
+    return () => clearInterval(t);
+  }, [anyLive, gw]);
+
+  const info = id => (data.teamInfo || {})[id] || { s: (data.teams || {})[id] || '?', n: (data.teams || {})[id] || '?' };
+  const pn = el => (data.players[el] || {}).n || '#' + el;
+  const lp = data.leaguePicks && data.leaguePicks.gw === gw ? Object.values(data.leaguePicks.by || {}) : [];
+  const own = {};
+  lp.forEach(t => (t.picks || []).forEach(pk => { if (pk.multiplier > 0) own[pk.element] = (own[pk.element] || 0) + 1; }));
+  const Own = ({ el }) => (own[el] ? <Text style={s.fxOwn}>👥{own[el]}</Text> : null);
+
+  const days = [];
+  [...(fx || [])].sort((a, b) => Date.parse(a.kickoff_time || 0) - Date.parse(b.kickoff_time || 0) || a.id - b.id).forEach(f => {
+    const key = f.kickoff_time ? formatMoroccoDate(Date.parse(f.kickoff_time)).split(' · ')[0] : 'التوقيت مازال ما تحددش';
+    const d = days[days.length - 1];
+    if (d && d.key === key) d.fx.push(f); else days.push({ key, fx: [f] });
+  });
+
+  const detail = f => {
+    const st = id => (f.stats || []).find(x => x.identifier === id) || { h: [], a: [] };
+    const confirmed = st('bonus');
+    const isConf = confirmed.h.length + confirmed.a.length > 0;
+    const bonus = isConf
+      ? [...confirmed.h, ...confirmed.a].map(r => ({ el: r.element, v: r.value }))
+      : Object.entries(provisionalBonus([f])).map(([el, v]) => ({ el: +el, v }));
+    bonus.sort((a, b) => b.v - a.v);
+    const bps = [...st('bps').h.map(r => ({ ...r, side: 'h' })), ...st('bps').a.map(r => ({ ...r, side: 'a' }))].sort((a, b) => b.value - a.value).slice(0, 6);
+    const side = rows => rows.map(r => (
+      <View key={r.element} style={s.fxEvRow}>
+        <Text style={s.fxEvName} numberOfLines={1}>{pn(r.element)}{r.value > 1 ? ` ×${r.value}` : ''}</Text>
+        <Own el={r.element} />
+      </View>
+    ));
+    const events = FX_STATS.map(([id, icon, label]) => {
+      const x = st(id);
+      if (!x.h.length && !x.a.length) return null;
+      return (
+        <View key={id} style={s.fxEv}>
+          <Text style={s.fxEvLabel}>{icon} {label}</Text>
+          <View style={s.fxEvCols}>
+            <View style={{ flex: 1 }}>{side(x.h)}</View>
+            <View style={s.fxEvSep} />
+            <View style={{ flex: 1 }}>{side(x.a)}</View>
+          </View>
+        </View>
+      );
+    });
+    return (
+      <View style={s.fxDetail}>
+        {events.some(Boolean) ? events : <Text style={[s.small, { textAlign: 'center', padding: 8 }]}>حتى حاجة مازال ما وقعات.</Text>}
+        {bonus.length ? (
+          <View style={s.fxEv}>
+            <Text style={s.fxEvLabel}>★ البونيس {isConf ? '' : '(حسب BPS دابا)'}</Text>
+            {bonus.map(b => (
+              <View key={b.el} style={s.fxBonusRow}>
+                <View style={[s.fxBonusN, { backgroundColor: b.v === 3 ? C.gold : b.v === 2 ? C.silver : C.bronze }]}><Text style={s.fxBonusNT}>{b.v}</Text></View>
+                <Text style={[s.fxEvName, { flex: 1 }]} numberOfLines={1}>{pn(b.el)}</Text>
+                <Own el={b.el} />
+                <Text style={s.small}>{info((data.players[b.el] || {}).team).s}</Text>
+              </View>
+            ))}
+          </View>
+        ) : null}
+        {bps.length ? (
+          <View style={s.fxEv}>
+            <Text style={s.fxEvLabel}>📊 أحسن BPS</Text>
+            {bps.map(r => (
+              <View key={r.element} style={s.fxBonusRow}>
+                <Text style={[s.fxEvName, { flex: 1 }]} numberOfLines={1}>{pn(r.element)}</Text>
+                <Text style={s.small}>{info(r.side === 'h' ? f.team_h : f.team_a).s}</Text>
+                <View style={s.fxBpsBar}><View style={[s.fxBpsFill, { width: `${Math.max(4, (r.value / Math.max(1, bps[0].value)) * 100)}%` }]} /></View>
+                <Text style={[s.gridNum, { width: 30, textAlign: 'left', fontSize: 12 }]}>{r.value}</Text>
+              </View>
+            ))}
+          </View>
+        ) : null}
+      </View>
+    );
+  };
+
+  const card = f => {
+    const live = f.started && !f.finished && !f.finished_provisional;
+    const done = f.finished || f.finished_provisional;
+    const h = info(f.team_h), a = info(f.team_a);
+    const time = f.kickoff_time ? formatMoroccoDate(Date.parse(f.kickoff_time)).split(' · ')[1] : '–';
+    const isOpen = openId === f.id;
+    return (
+      <TouchableOpacity key={f.id} activeOpacity={0.85} onPress={() => f.started && setOpenId(isOpen ? null : f.id)} style={[s.fxCard, live && s.fxCardLive]}>
+        <View style={s.fxRow}>
+          <View style={s.fxTeam}>
+            <TeamBadge info={h} />
+            <Text style={s.fxTeamT} numberOfLines={1}>{h.n}</Text>
+          </View>
+          <View style={s.fxMid}>
+            {f.started ? (
+              <View style={[s.fxScore, live && { backgroundColor: C.pink }]}>
+                <View style={{ flexDirection: 'row-reverse', gap: 8 }}>
+                  <Text style={s.fxScoreT}>{f.team_h_score ?? 0}</Text><Text style={s.fxScoreT}>-</Text><Text style={s.fxScoreT}>{f.team_a_score ?? 0}</Text>
+                </View>
+              </View>
+            ) : <View style={[s.fxScore, { backgroundColor: C.bg }]}><Text style={[s.fxScoreT, { color: C.pitch }]}>{time}</Text></View>}
+            <Text style={[s.fxState, live && { color: C.pink }]}>{live ? `🔴 ${f.minutes}'` : done ? 'انتهت' : ''}</Text>
+          </View>
+          <View style={[s.fxTeam, { flexDirection: 'row' }]}>
+            <TeamBadge info={a} />
+            <Text style={[s.fxTeamT, { textAlign: 'left' }]} numberOfLines={1}>{a.n}</Text>
+          </View>
+        </View>
+        {f.started ? <Text style={s.fxMore}>{isOpen ? '▴ خبي التفاصيل' : '▾ التفاصيل والبونيس'}</Text> : null}
+        {isOpen ? detail(f) : null}
+      </TouchableOpacity>
+    );
+  };
+
+  return (
+    <View style={s.fixedPage}>
+      <View style={[s.card, { overflow: 'hidden' }]}><GwNav list={list} gw={gw} setGw={setGw} /></View>
+      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ gap: 10, paddingBottom: 24 }} refreshControl={refreshControl}>
+        {err ? <View style={s.err}><Text style={{ color: C.bad, textAlign: 'right' }}>ما قدرتش نجيب الماتشات.</Text></View> : null}
+        {!fx && !err ? <ActivityIndicator color={C.pink} style={{ marginTop: 30 }} /> : null}
+        {days.map(d => (
+          <View key={d.key} style={{ gap: 8 }}>
+            <Text style={s.fxDay}>{d.key}</Text>
+            {d.fx.map(card)}
+          </View>
+        ))}
+      </ScrollView>
+    </View>
+  );
+}
+
 function Hmar({ c, open, refreshControl }) {
   const name = id => c.per[id].m.name;
+  // 7mar GW N kaybda l-7okm dyalo m3a 00:00 mn b3d akhir match f GW N, w kaysali m3a 00:00 mn b3d
+  // akhir match f GW N+1. Donc mli katsali GW N, 7mar GW N-1 kayb9a 7tta l-lil, 3ad kaytbeddel bo7do.
   const last = c.byGw[c.byGw.length - 1];
-  // L-mouda dyal l-7mar l-9dim salat (00:00 mn b3d akhir match f l-jawla li jat mn b3dou) walakin
-  // FPL mazal ma 3llmatch l-jawla "finished" (kayt-sennaw t-ta2kid dyal l-bonus): l-7mar l-jdid
-  // huwa l-7mar l-mo2a99at dyal l-jawla l-live, w l-kronometre l-jdid kaybda dghya.
+  const prev = c.byGw[c.byGw.length - 2];
   const [expired, setExpired] = useState(null);
-  const swapped = last && c.liveDonkey && c.liveDonkey.gw === last.gw + 1 && expired === c.liveDonkey.gw;
-  const cur = swapped ? { ...c.liveDonkey, provisional: true } : last;
+  const cur = last && prev && expired !== last.gw ? prev : last;
   const pens = [...c.table].sort((a, b) => b.pen.amount - a.pen.amount || b.donkeys.length - a.donkeys.length);
   const banner = cur ? (
     <View style={s.donkeyRow}>
       <View style={s.donkeyIcon}><Text style={{ fontSize: 22 }}>🐴</Text></View>
       <View style={{ flex: 1 }}>
         <Text style={s.donkeyName} numberOfLines={1}>{cur.ids.map(name).join(' و ')}</Text>
-        <Text style={s.donkeySub}>حمار GW{cur.gw} · {cur.min} pts{cur.provisional ? ' · مؤقت' : ''}</Text>
+        <Text style={s.donkeySub}>حمار GW{cur.gw} · {cur.min} pts</Text>
       </View>
       {cur.gw < 38 ? <DonkeyTimer key={cur.gw} nextGw={cur.gw + 1} onOver={setExpired} /> : null}
     </View>
@@ -650,7 +821,7 @@ function Hmar({ c, open, refreshControl }) {
           title: 'الحمير جولة بجولة',
           body: (
             <View style={s.dgList}>
-              {[...(swapped ? [cur] : []), ...[...c.byGw].reverse()].map((b, i) => (
+              {[...c.byGw].reverse().map((b, i) => (
                 <TouchableOpacity key={b.gw} style={s.dgCard} onPress={() => open(b.ids[0])} activeOpacity={0.8}>
                   <View style={[s.dgGw, i === 0 && { backgroundColor: C.pink }]}>
                     <Text style={s.dgGwL}>GW</Text>
@@ -661,7 +832,6 @@ function Hmar({ c, open, refreshControl }) {
                     <View style={{ flexDirection: 'row-reverse', alignItems: 'center', gap: 6 }}>
                       <Text style={s.dgTeam} numberOfLines={1}>{b.ids.map(id => c.per[id].m.team).join('، ')}</Text>
                       {b.tie ? <View style={s.dgTie}><Text style={s.dgTieT}>تعادل</Text></View> : null}
-                      {b.provisional ? <View style={s.dgTie}><Text style={s.dgTieT}>مؤقت</Text></View> : null}
                     </View>
                   </View>
                   <View style={s.dgPts}>
@@ -1752,13 +1922,30 @@ export default function App() {
     return () => { document.removeEventListener('visibilitychange', onShow); clearInterval(t); };
   }, []);
 
-  // Wast la journée: kan3awdo njibo les points kol d9i9a.
+  // Tajdid otomatiki dyal kolchi: wast l-jawla kol d9i9a (bach nchoufo nihayat akhir match dghya),
+  // mn b3d ma tsali w FPL mazal ma 2akkdat l-bonus kol 5 d9aye9, w ila ma kayn walo kanstennaw
+  // l-deadline dyal l-jawla l-jaya. W kol mra katrja3 l l-app (wla l-onglet) kan-tjeddou.
   const liveNow = !!(data && data.current && !data.finished.includes(data.current));
+  const pending = !!(data && data.pending);
+  const nextDeadline = data && data.nextDeadline;
   useEffect(() => {
-    if (!liveNow) return;
-    const t = setInterval(() => refresh(true), 60000);
-    return () => clearInterval(t);
-  }, [liveNow, refresh]);
+    if (liveNow || pending) {
+      const t = setInterval(() => refresh(true), liveNow ? 60000 : 5 * 60000);
+      return () => clearInterval(t);
+    }
+    if (!nextDeadline) return;
+    const wait = nextDeadline + 60000 - Date.now();
+    if (wait <= 0 || wait > 2 ** 31 - 1) return;
+    const t = setTimeout(() => refresh(true), wait);
+    return () => clearTimeout(t);
+  }, [liveNow, pending, nextDeadline, refresh]);
+  const fetchedAt = data && data.fetchedAt;
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', st => {
+      if (st === 'active' && (!fetchedAt || Date.now() - Date.parse(fetchedAt) > 2 * 60000)) refresh(true);
+    });
+    return () => sub.remove();
+  }, [fetchedAt, refresh]);
 
   const login = (id, x) => { if (x) setSess(x); setMeId(id); setTab('table'); AsyncStorage.setItem('fpl:me', String(id)).catch(() => {}); };
   const logout = () => { setMeId(null); setViewId(null); setSess(null); AsyncStorage.removeItem('fpl:me').catch(() => {}); };
@@ -1767,7 +1954,7 @@ export default function App() {
   const c = useMemo(() => compute(data), [data]);
   const isAdmin = !!sess && sess.uid === CONFIG.staff.admin;
   const isStaff = isAdmin || (!!sess && sess.uid === CONFIG.staff.treasurer);
-  const tabs = [['table', 'الترتيب', '🏆'], ['hmar', 'الحمار', '🐴'], ['stats', 'إحصائيات', '📊'], ['me', 'فرقتي', '⚽'], ['fund', 'الصندوق', '💰'], ['pay', isStaff ? 'الخلاص' : 'حسابي', '💳'], ['rules', 'القانون', '📜']];
+  const tabs = [['table', 'الترتيب', '🏆'], ['matches', 'الماتشات', '🏟️'], ['hmar', 'الحمار', '🐴'], ['stats', 'إحصائيات', '📊'], ['me', 'فرقتي', '⚽'], ['fund', 'الصندوق', '💰'], ['pay', isStaff ? 'الخلاص' : 'حسابي', '💳'], ['rules', 'القانون', '📜']];
   if (isAdmin) tabs.push(['admin', 'الإدارة', '⚙️']);
   const me = c && meId ? c.per[meId] : null;
   const pullToRefresh = <RefreshControl refreshing={loading} onRefresh={() => refresh()} />;
@@ -1829,11 +2016,12 @@ export default function App() {
               </TouchableOpacity>
             </TouchableOpacity>
           </Modal>
-          {!viewId && ['table', 'hmar', 'stats', 'fund'].includes(tab) ? (
+          {!viewId && ['table', 'matches', 'hmar', 'stats', 'fund'].includes(tab) ? (
             // Had les pages 3ndhom scroll dyalhom: l-entêtes dyal les jadawel kayb9aw tabtin.
             <View style={{ flex: 1, backgroundColor: C.bg }}>
               {error ? <View style={[s.err, { margin: 14, marginBottom: 0 }]}><Text style={{ color: C.bad, textAlign: 'right' }}>{error}</Text></View> : null}
               {tab === 'table' ? <Classement c={c} data={data} meId={meId} open={open} refreshControl={pullToRefresh} /> :
+               tab === 'matches' ? <Matches data={data} refreshControl={pullToRefresh} /> :
                tab === 'hmar' ? <Hmar c={c} open={open} refreshControl={pullToRefresh} /> :
                tab === 'stats' ? <Stats c={c} data={data} meId={meId} open={open} refreshControl={pullToRefresh} /> :
                <Fund c={c} refreshControl={pullToRefresh} />}
@@ -1855,7 +2043,7 @@ export default function App() {
           )}
           {/* L-bar dyal l-te7t b7al FPL: les pages l-mohimmin, w "المزيد" fiha kolchi. */}
           <View style={s.bottomNav}>
-            {[['table', 'الترتيب', '🏆'], ['me', 'فرقتي', '⚽'], ['hmar', 'الحمار', '🐴'], ['stats', 'إحصائيات', '📊']].map(([k, l, icon]) => {
+            {[['table', 'الترتيب', '🏆'], ['me', 'فرقتي', '⚽'], ['matches', 'الماتشات', '🏟️'], ['hmar', 'الحمار', '🐴'], ['stats', 'إحصائيات', '📊']].map(([k, l, icon]) => {
               const on = tab === k && !viewId;
               return (
                 <TouchableOpacity key={k} onPress={() => { setTab(k); setViewId(null); }} style={s.bottomItem} accessibilityRole="tab" accessibilityState={{ selected: on }}>
@@ -1865,7 +2053,7 @@ export default function App() {
               );
             })}
             {(() => {
-              const on = !viewId && !['table', 'me', 'hmar', 'stats'].includes(tab);
+              const on = !viewId && !['table', 'me', 'matches', 'hmar', 'stats'].includes(tab);
               return (
                 <TouchableOpacity onPress={() => setMenu(true)} style={s.bottomItem} accessibilityLabel="المزيد">
                   <View style={[s.bottomIconWrap, on && s.bottomIconOn]}><Text style={[s.bottomIcon, { color: on ? C.pitch : '#fff' }]}>☰</Text></View>
@@ -1920,6 +2108,33 @@ const s = StyleSheet.create({
   small: { fontSize: 12, color: C.muted, textAlign: 'right' },
   bold: { fontWeight: '700' },
   num: { fontSize: 14, color: C.ink, fontVariant: ['tabular-nums'] },
+  fxDay: { fontSize: 13, fontWeight: '900', color: C.pitch, textAlign: 'right', marginTop: 6, paddingHorizontal: 4 },
+  fxCard: { backgroundColor: C.card, borderRadius: 16, paddingVertical: 12, paddingHorizontal: 12, borderWidth: 1, borderColor: C.line },
+  fxCardLive: { borderColor: C.pink, borderWidth: 2 },
+  fxRow: { flexDirection: 'row-reverse', alignItems: 'center', gap: 8 },
+  fxTeam: { flex: 1, flexDirection: 'row-reverse', alignItems: 'center', gap: 8 },
+  fxTeamT: { flex: 1, fontSize: 13, fontWeight: '800', color: C.ink, textAlign: 'right' },
+  fxBadge: { width: 30, height: 30 },
+  fxBadgeAlt: { borderRadius: 15, backgroundColor: C.pitch, alignItems: 'center', justifyContent: 'center' },
+  fxBadgeT: { color: '#fff', fontSize: 9, fontWeight: '900' },
+  fxMid: { alignItems: 'center', minWidth: 74 },
+  fxScore: { backgroundColor: C.pitch, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 4, minWidth: 64, alignItems: 'center' },
+  fxScoreT: { color: '#fff', fontSize: 16, fontWeight: '900', fontVariant: ['tabular-nums'], writingDirection: 'ltr' },
+  fxState: { fontSize: 10, fontWeight: '800', color: C.muted, marginTop: 3 },
+  fxMore: { fontSize: 11, color: C.pink, fontWeight: '700', textAlign: 'center', marginTop: 8 },
+  fxDetail: { marginTop: 8, borderTopWidth: 1, borderColor: C.line, paddingTop: 8, gap: 10 },
+  fxEv: { gap: 4 },
+  fxEvLabel: { fontSize: 12, fontWeight: '900', color: C.pitch, textAlign: 'center', backgroundColor: C.bg, borderRadius: 6, paddingVertical: 3 },
+  fxEvCols: { flexDirection: 'row-reverse', gap: 8 },
+  fxEvSep: { width: 1, backgroundColor: C.line },
+  fxEvRow: { flexDirection: 'row-reverse', alignItems: 'center', gap: 4, paddingVertical: 1 },
+  fxEvName: { fontSize: 13, color: C.ink, fontWeight: '600', textAlign: 'right', flexShrink: 1 },
+  fxOwn: { fontSize: 10, color: C.muted, fontWeight: '700' },
+  fxBonusRow: { flexDirection: 'row-reverse', alignItems: 'center', gap: 8, paddingVertical: 2 },
+  fxBonusN: { width: 20, height: 20, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+  fxBonusNT: { color: '#fff', fontSize: 11, fontWeight: '900' },
+  fxBpsBar: { width: 70, height: 6, borderRadius: 3, backgroundColor: C.bg, overflow: 'hidden', flexDirection: 'row-reverse' },
+  fxBpsFill: { height: 6, backgroundColor: '#953bff', borderRadius: 3 },
   gridRow: { flexDirection: 'row-reverse' },
   gridHeadRow: { backgroundColor: C.bg, borderBottomWidth: 1, borderColor: C.line, marginTop: 6 },
   gridName: { width: 150, borderLeftWidth: 1, borderColor: C.line },
